@@ -1,0 +1,209 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "state": "Punjab",
+    "district": "Ludhiana"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       75.65,
+       30.7
+      ],
+      [
+       76.05,
+       30.7
+      ],
+      [
+       76.05,
+       31.1
+      ],
+      [
+       75.65,
+       31.1
+      ],
+      [
+       75.65,
+       30.7
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "state": "Punjab",
+    "district": "Amritsar"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       74.67,
+       31.43
+      ],
+      [
+       75.07,
+       31.43
+      ],
+      [
+       75.07,
+       31.83
+      ],
+      [
+       74.67,
+       31.83
+      ],
+      [
+       74.67,
+       31.43
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "state": "Haryana",
+    "district": "Karnal"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       76.79,
+       29.49
+      ],
+      [
+       77.19,
+       29.49
+      ],
+      [
+       77.19,
+       29.89
+      ],
+      [
+       76.79,
+       29.89
+      ],
+      [
+       76.79,
+       29.49
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "state": "Haryana",
+    "district": "Hisar"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       75.52,
+       28.95
+      ],
+      [
+       75.92,
+       28.95
+      ],
+      [
+       75.92,
+       29.35
+      ],
+      [
+       75.52,
+       29.35
+      ],
+      [
+       75.52,
+       28.95
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "state": "Uttarakhand",
+    "district": "Nainital"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       79.26,
+       29.18
+      ],
+      [
+       79.66,
+       29.18
+      ],
+      [
+       79.66,
+       29.58
+      ],
+      [
+       79.26,
+       29.58
+      ],
+      [
+       79.26,
+       29.18
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "state": "Uttarakhand",
+    "district": "Dehradun"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       77.83,
+       30.12
+      ],
+      [
+       78.23,
+       30.12
+      ],
+      [
+       78.23,
+       30.52
+      ],
+      [
+       77.83,
+       30.52
+      ],
+      [
+       77.83,
+       30.12
+      ]
+     ]
+    ]
+   }
+  }
+ ]
+}
