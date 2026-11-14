@@ -87,7 +87,8 @@ NASA Earth Engine (Daily 2016–2026)
 - Month × year calendar (activity or hotspot count), yearly view, anomaly vs monthly median, sensor comparison before/after harmonization.
 - Metric cards: latest complete month vs its historical median, percentile rank, peak months.
 - Blank cells = no data (not zero).
-- Downloads: harmonized CSV, per-sensor CSV, individual hotspots CSV, every chart as PNG.
+- Research views: seasonal trend (Mann-Kendall + Sen's slope) per district and as a map; sensor-range uncertainty on every value; fire type (cropland / forest / woodland) and static heat sources for 19 districts.
+- Downloads: harmonized CSV, per-sensor CSV, individual hotspots CSV, trend table, everything as one ZIP with data dictionary and citation; every chart as PNG.
 - _Visual: 2–3 screenshots of the live Streamlit app — Ludhiana heatmap, metric cards, map_
 
 ---

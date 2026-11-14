@@ -1,0 +1,68 @@
+cff-version: 1.2.0
+message: >-
+  If you use FireLens or its data, please cite it as below, and cite the NASA
+  products it is built on (listed under references).
+title: "FireLens: a harmonized MODIS–VIIRS burning-activity calendar for Northern India, 2016–2026"
+type: software
+authors:
+  - name: "COSMICBRO's (FireLens team)"
+repository-code: "https://github.com/frbasil-1k/HARMONIZATION-space-app"
+license: MIT
+date-released: "2026-11-15"
+abstract: >-
+  FireLens harmonizes active-fire hotspot detections from Terra and Aqua MODIS
+  and Suomi-NPP VIIRS into one monthly burning-activity record for 49 districts
+  of Punjab, Haryana and Uttarakhand (2016–2026), and serves it as a web
+  calendar with anomalies, trends, sensor-range uncertainty and fire-type
+  context. Built for the NASA Space Apps Challenge 2026.
+keywords:
+  - active fire
+  - hotspots
+  - MODIS
+  - VIIRS
+  - harmonization
+  - crop residue burning
+  - NASA Space Apps Challenge
+references:
+  - type: data
+    title: "MODIS/Terra Thermal Anomalies/Fire Daily L3 Global 1km SIN Grid V061"
+    authors:
+      - family-names: Giglio
+        given-names: L.
+      - family-names: Justice
+        given-names: C.
+    year: 2021
+    publisher:
+      name: "NASA Land Processes Distributed Active Archive Center"
+    doi: 10.5067/MODIS/MOD14A1.061
+  - type: data
+    title: "MODIS/Aqua Thermal Anomalies/Fire Daily L3 Global 1km SIN Grid V061"
+    authors:
+      - family-names: Giglio
+        given-names: L.
+      - family-names: Justice
+        given-names: C.
+    year: 2021
+    publisher:
+      name: "NASA Land Processes Distributed Active Archive Center"
+    doi: 10.5067/MODIS/MYD14A1.061
+  - type: data
+    title: "VIIRS/NPP Thermal Anomalies and Fire Daily L3 Global 1km SIN Grid V002"
+    authors:
+      - family-names: Giglio
+        given-names: L.
+    year: 2023
+    publisher:
+      name: "NASA Land Processes Distributed Active Archive Center"
+    doi: 10.5067/VIIRS/VNP14A1.002
+  - type: data
+    title: "MODIS/Terra+Aqua Land Cover Type Yearly L3 Global 500m SIN Grid V061"
+    authors:
+      - family-names: Friedl
+        given-names: M.
+      - family-names: Sulla-Menashe
+        given-names: D.
+    year: 2022
+    publisher:
+      name: "NASA Land Processes Distributed Active Archive Center"
+    doi: 10.5067/MODIS/MCD12Q1.061
