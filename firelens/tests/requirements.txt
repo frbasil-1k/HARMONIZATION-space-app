@@ -1,0 +1,2 @@
+# Dependencies for the tests. Install from firelens/: pip install -r tests/requirements.txt
+pytest
