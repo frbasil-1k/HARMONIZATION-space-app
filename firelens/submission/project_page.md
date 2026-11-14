@@ -55,10 +55,21 @@ The NASA LP DAAC distributes all three products.
 
 ## Method (plain words)
 
-1. **Collect** — For each district in Northern India, each month from January 2016, we count how many 1 km pixels were flagged as burning, and how many pixels had a clear view that month.
-2. **Normalize** — Burning activity = fire pixels ÷ clear-view pixels. This removes the cloud-cover bias that makes monsoon months look fire-free when they are simply unobserved.
-3. **Anchor** — VIIRS Suomi-NPP is our reference sensor (higher resolution, newer calibration). In Phase 2, MODIS Terra and Aqua will be scaled to VIIRS using their overlapping period.
-4. **Display** — A Streamlit app lets any user pick a state → district → sensor and see a month × year heatmap. Metric cards show how the current month compares to its long-term median.
+Satellite fire records are notoriously difficult to compare over time because different instruments see different numbers of fires for the same piece of land. To solve this, FireLens uses a four-step harmonization process written for clarity and scientific rigor:
+
+1. **Daily Pixel Extraction via Google Earth Engine:**  
+   Across every district in Northern India (covering Punjab, Haryana, and Uttarakhand) from January 2016 to 2026, we query daily observations from MODIS Terra (morning pass), MODIS Aqua (afternoon pass), and Suomi-NPP VIIRS (afternoon pass). For each day, we classify every 1 km pixel into whether it is actively burning ($\text{FireMask} \ge 8$), clear cloud-free land ($\text{FireMask} = 5 \text{ or } \ge 7$), or obscured by clouds, smoke, or missing data.
+
+2. **Cloud-Normalized Burning Activity:**  
+   Raw fire counts are deceptive: during the heavy monsoon months (July–September), cloud cover obscures the ground, making it appear that burning has stopped when the satellites simply cannot see the land. FireLens computes a normalized activity ratio for each district, month, and sensor:
+   $$\text{Burning Activity} = \frac{\text{fire\_pixel\_days}}{\text{clear\_pixel\_days}}$$
+   This expresses fire as a fraction of what was *actually observable*, completely removing cloud-cover bias and unequal satellite overpass frequencies.
+
+3. **Anchoring to Suomi-NPP VIIRS:**  
+   Because Suomi-NPP VIIRS has a sharper 375 m spatial resolution and higher thermal sensitivity than MODIS (1 km), it detects smaller, cooler agricultural burns that MODIS frequently misses. We choose Suomi-NPP VIIRS as our **anchor sensor**. MODIS Terra and MODIS Aqua are statistically scaled to the VIIRS baseline across their overlapping decade of observations, ensuring a seamless, continuous record.
+
+4. **Interactive Historical Context & Anomaly Detection:**  
+   Instead of overwhelming users with complex raw tables, the harmonized data powers an interactive Streamlit calendar heatmap. Each district's current monthly burning is automatically compared against its 10-year historical calendar-month median and percentile rank. Months with insufficient or missing imagery are transparently shown as blank/hatched cells rather than deceptive zeros. Researchers and local officials can download the full harmonized dataset directly as a clean CSV for regional air quality planning.
 
 ---
 
@@ -94,8 +105,8 @@ The NASA LP DAAC distributes all three products.
 
 ## Links
 
-- **Live app:** _(add link once R3 / Mohammed Mubeen deploys)_
-- **Demo video / slides:** _(add link once recorded — goes in Drive `slides/` or `video/`)_
+- **Live app:** _(waiting for R3 / Mohammed Mubeen to deploy)_
+- **Demo video / slides:** _(add link once recorded — will be uploaded to Drive `slides/` or `video/`)_
 - **GitHub repo:** https://github.com/frbasil-1k/HARMONIZATION-space-app
 - **Drive folder (public):** https://drive.google.com/drive/folders/10Ux8snPZ6pcc6l9GhDaxWkgh4WRp14Ag?usp=sharing
 
@@ -105,6 +116,6 @@ The NASA LP DAAC distributes all three products.
 > - [ ] Confirm exact close time and required fields from Space Apps submission guide (R4)
 > - [ ] Add live app URL from R3 (Mohammed Mubeen)
 > - [ ] Confirm Oct–Nov peak wording matches R2's real Ludhiana plot (Mohammed Basil)
-> - [ ] Add Drive folder public link
+> - [x] Add Drive folder public link (Done: https://drive.google.com/drive/folders/10Ux8snPZ6pcc6l9GhDaxWkgh4WRp14Ag?usp=sharing)
 > - [ ] Add demo video / slides link
 

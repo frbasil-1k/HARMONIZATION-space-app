@@ -1,56 +1,58 @@
 # FireLens — UX Issues Log
-> **R4 owner:** Mohammed Zaidan Contractor
-> **Instructions:** Use the live app as a first-time user. Log every moment of confusion, surprise, or friction below. This goes to R3 (Mohammed Mubeen Kamalsha) to fix before the demo.
-> ⚠️ Fill this in once R3 shares the live Streamlit app link.
+> **R4 owner:** Mohammed Zaidan Contractor  
+> **Testing Session:** Saturday 23:30 IST  
+> **Instructions:** Open the live app (or local run) as a first-time user in an incognito window. Log every moment of confusion, friction, visual glitch, or unexpected behavior. Mubeen will address priority fixes tomorrow morning.
 
 ---
 
 ## App Under Test
 
-- **URL:** _(waiting for R3 to post the link)_
-- **Tested at:** _(timestamp)_
+- **Live URL:** _(waiting for Mubeen to paste deployed share.streamlit.io link, or run locally: `streamlit run app/app.py`)_
+- **Tested at:** 23:30 IST (Nov 14, 2026)
 - **Tester:** Mohammed Zaidan Contractor (R4)
 
 ---
 
 ## Issue Log
 
-| # | Screen / Step | What happened | Why it's confusing | Priority | R3 fix? |
-|---|--------------|---------------|--------------------|----------|---------|
-| 1 | | | | High / Med / Low | |
-| 2 | | | | | |
-| 3 | | | | | |
+| # | Screen / Step | What happened | Why it's confusing / Broken | Priority | Status / Mubeen Fix |
+|---|--------------|---------------|----------------------------|----------|---------------------|
+| 1 | | | | High / Med / Low | Open |
+| 2 | | | | High / Med / Low | Open |
+| 3 | | | | High / Med / Low | Open |
+| 4 | | | | High / Med / Low | Open |
 
-_(add rows as you find issues)_
-
----
-
-## First-Time User Flow to Test
-
-Walk through this sequence exactly as a non-technical user would:
-
-1. Open the app URL in a **logged-out / incognito browser**
-2. Can you tell what the app does from the first screen alone?
-3. Find Punjab → Ludhiana in the sidebar — is it obvious how?
-4. Read the heatmap — do you understand what the colours mean without help?
-5. Hover over a cell — is the tooltip clear?
-6. Look at the metric cards — do you understand what "ratio vs median" means?
-7. Find and click the CSV download — does the file open correctly?
-8. Look at the map — is the boundary disclaimer visible?
-9. Find a no-data month (blank cell) — could you tell it's missing data, not zero fire?
-10. Try a different district — does the app update correctly?
+_(Add rows as you encounter issues during testing)_
 
 ---
 
-## Screenshots to Capture During Testing
+## First-Time User Flow Checklist (Run at 23:30)
 
-- [ ] First screen (what a new user sees immediately)
-- [ ] Sidebar showing district picker
-- [ ] Ludhiana heatmap (Oct–Nov darker band visible)
-- [ ] Metric cards
-- [ ] Hover tooltip on a cell
-- [ ] Map with boundary
-- [ ] CSV download result
+Walk through this sequence in an **Incognito / Private tab**:
+
+1. **Initial Impression:** When the app loads, is the title, purpose, and one-liner immediately obvious?
+2. **State & District Picker:** Select **Punjab → Ludhiana**. Are the dropdowns intuitive, alphabetical, and responsive?
+3. **Sensor Selector:** Switch between **Suomi-NPP VIIRS**, **Terra MODIS**, and **Aqua MODIS**. Does the heatmap update smoothly?
+4. **Heatmap Inspection:**
+   - Look at October–November across years. Is the autumn stubble-burning band clearly visible?
+   - Look at July–September. Are cloudy / no-data months rendered as blank / grey cells rather than false 0s?
+   - Hover over cells. Does the tooltip show Year, Month, Activity value, and pixel counts clearly?
+5. **Metric Cards:**
+   - Ratio vs. median, percentile rank, and top 3 peak months.
+   - Are the numbers easy to interpret without a statistics background?
+6. **Data Download:** Click the **"Download CSV"** button for the selected district. Does it download a valid, clean CSV file?
+7. **Disclaimers & Credits:** Check the footer for NASA LP DAAC data credits and GAUL boundary disclaimer.
+
+---
+
+## Screenshots to Capture for Sunday Slides
+
+During your 23:30 test, take clean screenshots for Sunday's 7-slide deck and demo:
+- [ ] Screenshot 1: Full app dashboard with Punjab → Ludhiana selected
+- [ ] Screenshot 2: Close-up of the October–November fire peak on the heatmap
+- [ ] Screenshot 3: Metric cards display
+- [ ] Screenshot 4: Hover tooltip showing normalized activity value
+- [ ] Screenshot 5: Side-by-side or toggled view showing sensor differences
 
 ---
 

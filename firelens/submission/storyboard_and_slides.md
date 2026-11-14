@@ -8,16 +8,16 @@
 
 | Seconds | Screen | Subtitle (spoken / on screen) |
 |---------|--------|-------------------------------|
-| 0–5 | A raw hotspot count bar chart that jumps discontinuously when sensors change (Terra → Aqua → VIIRS) | *"Satellite fire records change with every new sensor."* |
-| 5–15 | App: user picks **Punjab → Ludhiana** → the month × year heatmap appears, Oct–Nov band clearly darker | *"FireLens harmonizes MODIS and VIIRS into one burning calendar."* |
-| 15–25 | Metric cards zoom in: this month vs median ratio, percentile rank, top-3 peak months; then the sensor-agreement validation chart | *"See if this month is unusual — backed by both sensors."* |
-| 25–30 | CSV download button clicked; footer shows team names and data credits | *"Built with NASA MODIS and VIIRS fire data."* |
+| 0–5 | R1’s figure: Three satellites disagreeing about the same fires over Northern India (Terra MODIS, Aqua MODIS, Suomi-NPP VIIRS displaying conflicting counts for the same period) | *"Three satellites, three different stories about the same fires. Which one is true?"* |
+| 5–15 | App: User selects **Punjab → Ludhiana** → the calendar heatmap appears, harmonizing the sensors into one continuous, consistent burning record | *"FireLens harmonizes MODIS and VIIRS into one consistent burning calendar."* |
+| 15–25 | Metric cards zoom in (this month vs median ratio, percentile rank, top-3 peak months), followed by R2's sensor-agreement validation scatter plot | *"See if this month is unusual — backed by a decade of validated data."* |
+| 25–30 | CSV download button clicked; footer displays COSMICBRO's team and NASA LP DAAC data credits | *"Built with NASA open fire data for Northern India."* |
 
 ### Notes for recording
 - Record at **1080p**, keep cursor movements slow and deliberate.
-- Use **English subtitles** (burn them in or attach as .srt — confirm format from submission rules).
-- Total runtime ≤ 30 seconds (confirm cap from submission rules).
-- **District fallback:** if Ludhiana's Oct–Nov peak isn't visually obvious in the real data, switch to whichever Punjab district R2 recommends.
+- Use **English subtitles** (burned into video or supplied via .srt).
+- Total runtime must strictly be ≤ 30 seconds.
+- **Visual opening:** Start immediately on R1's multi-sensor divergence chart with the bold visual question *"Which one is true?"*, transitioning directly into the FireLens interface showing the unified answer.
 
 ---
 
@@ -32,34 +32,51 @@
 
 ---
 
-### Slide 2 — The Problem: The Sensor Step
-- Satellite fire data is inconsistent across sensors — MODIS Terra, Aqua, and VIIRS return different counts for the same fire events.
-- A decade of records contains two major sensor transitions, making trend analysis unreliable.
-- _Visual: bar chart showing raw hotspot counts with visible jumps at sensor changeover years_
+### Slide 2 — The Problem: Three Satellites Disagreeing
+- **Continuous overlap, contradictory signals:** Between 2016 and 2026, Terra MODIS, Aqua MODIS, and Suomi-NPP VIIRS observed Northern India simultaneously, yet report vastly different fire counts for the exact same districts and months.
+- **Why they disagree:**
+  - Different overpass times (Terra ~10:30 AM morning vs. Aqua ~1:30 PM afternoon vs. VIIRS afternoon).
+  - Spatial resolution mismatch: VIIRS (375 m) detects smaller, cooler agricultural fires that 1 km MODIS pixels miss entirely.
+  - Monsoon cloud masking creates severe, unequal blind spots (July–September).
+- **The Core Question:** *"Which one is true?"* Raw counts mislead farmers, environmental monitors, and state policy.
+- _Visual: R1's multi-sensor time-series figure showing Terra vs Aqua vs VIIRS raw counts diverging over the same Punjab/Haryana districts, captioned "Which satellite do you trust?"_
 
 ---
 
-### Slide 3 — Our Approach: The Pipeline
-- **Input:** Daily MODIS (MOD14A1, MYD14A1) + VIIRS (VNP14A1) fire products via Google Earth Engine
-- **Normalize:** Activity = fire pixels ÷ clear-view pixels (removes cloud-cover bias)
-- **Anchor:** VIIRS Suomi-NPP as reference; MODIS scaled to it
-- **Output:** `district_monthly.csv` — one consistent time-series per district, 2016–2026
-- _Visual: simple pipeline diagram: EE → CSV → App_
+### Slide 3 — Our Approach: The Harmonization Pipeline
+- **Unified NASA Earth Engine Ingestion:** Daily MODIS (MOD14A1, MYD14A1) and VIIRS (VNP14A1) data processed across `[R2: __]` Northern India districts (Punjab, Haryana, Uttarakhand) from 2016–2026.
+- **The Normalization Equation (Plain Words):**
+  $$\text{Burning Activity} = \frac{\text{fire\_pixel\_days}}{\text{clear\_pixel\_days}}$$
+  - Counts fire pixels ($\text{FireMask} \ge 8$) divided strictly by cloud-free, clearly seen land pixels ($\text{FireMask} = 5 \text{ or } \ge 7$).
+  - Eliminates cloud obscuration bias that falsely makes monsoon months look clean.
+- **Harmonization & Calibration:**
+  - **Anchor sensor:** Suomi-NPP VIIRS (highest spatial resolution and modern radiometry).
+  - Cross-calibrating MODIS series to the VIIRS anchor over their extensive overlapping period.
+- **Production Dataset:** Clean `district_monthly.csv` powering an interactive Streamlit intelligence app.
+- _Visual: Pipeline flowchart: NASA Earth Engine (3 sensors) ➔ Pixel Cloud Normalization ➔ Anchor Harmonization (VIIRS) ➔ Live App & CSV API_
 
 ```
-Google Earth Engine
-   MODIS Terra (MOD14A1)  ──┐
-   MODIS Aqua (MYD14A1)   ──┼──► fire_pixel_days / clear_pixel_days ──► Harmonize ──► App
-   VIIRS S-NPP (VNP14A1)  ──┘                                             (anchor: VIIRS)
+NASA Earth Engine (Daily 2016–2026)
+  • Terra MODIS (MOD14A1)  ─┐
+  • Aqua MODIS (MYD14A1)   ─┼─► Normalization: fire_pixel_days / clear_pixel_days ─► Harmonize to VIIRS ─► Live App
+  • VIIRS S-NPP (VNP14A1)  ─┘                                                        (Anchor Sensor)
 ```
 
 ---
 
-### Slide 4 — Harmonization & Validation
-- Activity metric removes cloud-cover and sensor-sensitivity bias.
-- Sensor-agreement chart: VIIRS vs Aqua activity — high correlation (r ≈ ?) confirms both sensors see the same signal.
-- Seasonal validation: paddy-stubble peak (Oct–Nov) and wheat-residue peak (Apr–May) visible every year.
-- _Visual: R2's Plot 2 (sensor agreement scatter) + Plot 1 (Ludhiana seasonality) — insert when available_
+### Slide 4 — Harmonization & Scientific Validation
+- **Cross-Sensor Agreement:**
+  - VIIRS vs Aqua activity exhibits strong linear correlation: $r = \mathbf{[R2:\ \_\_]}$ ($p = \mathbf{[R2:\ \_\_]}$) across all $\mathbf{[R2:\ \_\_]}$ overlapping district-months.
+  - Quantitative scaling confirms VIIRS reads $\mathbf{[R2:\ \_\_\times]}$ higher due to 375 m pixel sensitivity, validating the need for scaling.
+- **Double-Cropping Stubble Seasonality Validated:**
+  - **Ludhiana (Punjab):** Accurately captures the intense post-monsoon **October–November** paddy stubble burn:
+    - Oct–Nov mean activity = $\mathbf{[R2:\ \_\_]}$ vs. annual baseline = $\mathbf{[R2:\ \_\_]}$.
+  - Captures the secondary **April–May** wheat-residue clearing ($\mathbf{[R2:\ \_\_]}$).
+- **Forest Fire Ecosystem Sanity Check:**
+  - **Uttarakhand ($\mathbf{[R2:\ District\ Name]}$):** Accurately distinguishes agricultural burning from Himalayan forest fires, isolating the natural **March–May** spring fire season (activity $\mathbf{[R2:\ \_\_]}$ vs annual $\mathbf{[R2:\ \_\_]}$).
+- **Gaps Honesty:**
+  - $\mathbf{[R2:\ \_\_]}$ gap rows ($\mathbf{[R2:\ \_\_\%]}$) with missing images or heavy cloud obstruction are transparently hatched/blanked, never disguised as "zero fires".
+- _Visual: Trio of validation charts — R2's Plot 1 (Ludhiana Seasonality), Plot 2 (VIIRS vs Aqua Correlation Scatter), and Plot 3 (Uttarakhand Forest Fire Season)_
 
 ---
 
