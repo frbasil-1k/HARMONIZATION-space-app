@@ -1,0 +1,197 @@
+state,district,sensor,year,month,date,n_images,clear_pixel_days,clear_pixel_coverage,fire_pixel_days,activity,reason
+Haryana,Ambala,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Ambala,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Ambala,viirs_snpp,2026,11,2026-11-01,2,4086.73,0.0666667,1,0.000244694,low_clear_coverage
+Haryana,Ambala,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Bhiwani,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Bhiwani,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Bhiwani,viirs_snpp,2026,11,2026-11-01,2,10810.9,0.0666667,0,0,low_clear_coverage
+Haryana,Bhiwani,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Faridabad,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Faridabad,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Faridabad,viirs_snpp,2026,11,2026-11-01,2,5017.41,0.0663987,0,0,low_clear_coverage
+Haryana,Faridabad,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Fatehabad,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Fatehabad,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Fatehabad,viirs_snpp,2026,11,2026-11-01,2,5595.62,0.0666667,0,0,low_clear_coverage
+Haryana,Fatehabad,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Gurgaon,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Gurgaon,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Gurgaon,viirs_snpp,2026,11,2026-11-01,2,6416.04,0.0666667,0,0,low_clear_coverage
+Haryana,Gurgaon,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Hisar,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Hisar,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Hisar,viirs_snpp,2026,11,2026-11-01,2,9723.13,0.0666667,0,0,low_clear_coverage
+Haryana,Hisar,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Jhajjar,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Jhajjar,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Jhajjar,viirs_snpp,2026,11,2026-11-01,2,4923.46,0.0666278,0,0,low_clear_coverage
+Haryana,Jhajjar,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Jind,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Jind,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Jind,viirs_snpp,2026,11,2026-11-01,2,6373.04,0.0666667,0,0,low_clear_coverage
+Haryana,Jind,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Kaithal,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Kaithal,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Kaithal,viirs_snpp,2026,11,2026-11-01,2,5361.62,0.0666418,0,0,low_clear_coverage
+Haryana,Kaithal,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Karnal,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Karnal,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Karnal,viirs_snpp,2026,11,2026-11-01,2,6026.74,0.0666667,0,0,low_clear_coverage
+Haryana,Karnal,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Kurukshetra,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Kurukshetra,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Kurukshetra,viirs_snpp,2026,11,2026-11-01,2,4274.47,0.0665877,0,0,low_clear_coverage
+Haryana,Kurukshetra,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Mahendragarh,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Mahendragarh,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Mahendragarh,viirs_snpp,2026,11,2026-11-01,2,4516.69,0.0666667,0,0,low_clear_coverage
+Haryana,Mahendragarh,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Panchkula,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Panchkula,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Panchkula,viirs_snpp,2026,11,2026-11-01,2,1715.87,0.0665501,0,0,low_clear_coverage
+Haryana,Panchkula,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Panipat,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Panipat,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Panipat,viirs_snpp,2026,11,2026-11-01,2,2849.84,0.0665281,0,0,low_clear_coverage
+Haryana,Panipat,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Rewari,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Rewari,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Rewari,viirs_snpp,2026,11,2026-11-01,2,2922.55,0.0666667,0,0,low_clear_coverage
+Haryana,Rewari,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Rohtak,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Rohtak,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Rohtak,viirs_snpp,2026,11,2026-11-01,2,3930.53,0.0666667,0,0,low_clear_coverage
+Haryana,Rohtak,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Sirsa,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Sirsa,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Sirsa,viirs_snpp,2026,11,2026-11-01,2,9862.87,0.066644,0,0,low_clear_coverage
+Haryana,Sirsa,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Sonepat,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Sonepat,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Sonepat,viirs_snpp,2026,11,2026-11-01,2,5140.76,0.0664536,0,0,low_clear_coverage
+Haryana,Sonepat,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Yamuna Nagar,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Yamuna Nagar,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Haryana,Yamuna Nagar,viirs_snpp,2026,11,2026-11-01,2,3043,0.0666667,0,0,low_clear_coverage
+Haryana,Yamuna Nagar,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Amritsar,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Amritsar,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Amritsar,viirs_snpp,2026,11,2026-11-01,2,11155.9,0.0663364,8.76863,0.000786006,low_clear_coverage
+Punjab,Amritsar,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Bathinda,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Bathinda,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Bathinda,viirs_snpp,2026,11,2026-11-01,2,7829.58,0.0665956,8.98824,0.00114798,low_clear_coverage
+Punjab,Bathinda,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Faridkot,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Faridkot,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Faridkot,viirs_snpp,2026,11,2026-11-01,2,3374.76,0.0666667,0.945098,0.000280049,low_clear_coverage
+Punjab,Faridkot,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Fatehgarh Sahib,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Fatehgarh Sahib,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Fatehgarh Sahib,viirs_snpp,2026,11,2026-11-01,2,2734.95,0.0666667,0,0,low_clear_coverage
+Punjab,Fatehgarh Sahib,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Firozpur,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Firozpur,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Firozpur,viirs_snpp,2026,11,2026-11-01,2,11999.2,0.066374,11.2314,0.000936008,low_clear_coverage
+Punjab,Firozpur,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Gurdaspur,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Gurdaspur,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Gurdaspur,viirs_snpp,2026,11,2026-11-01,2,8102.87,0.0664777,1.81961,0.000224563,low_clear_coverage
+Punjab,Gurdaspur,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Hoshiarpur,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Hoshiarpur,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Hoshiarpur,viirs_snpp,2026,11,2026-11-01,2,7712.47,0.0660403,0,0,low_clear_coverage
+Punjab,Hoshiarpur,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Jalandhar,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Jalandhar,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Jalandhar,viirs_snpp,2026,11,2026-11-01,2,5988.29,0.0663534,5,0.000834963,low_clear_coverage
+Punjab,Jalandhar,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Kapurthala,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Kapurthala,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Kapurthala,viirs_snpp,2026,11,2026-11-01,2,3670.11,0.064932,4,0.00108989,low_clear_coverage
+Punjab,Kapurthala,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Ludhiana,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Ludhiana,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Ludhiana,viirs_snpp,2026,11,2026-11-01,2,8243.18,0.0662664,0,0,low_clear_coverage
+Punjab,Ludhiana,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Mansa,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Mansa,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Mansa,viirs_snpp,2026,11,2026-11-01,2,5145.76,0.0666667,6.50196,0.00126356,low_clear_coverage
+Punjab,Mansa,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Moga,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Moga,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Moga,viirs_snpp,2026,11,2026-11-01,2,5337.27,0.0664352,0,0,low_clear_coverage
+Punjab,Moga,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Muktsar,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Muktsar,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Muktsar,viirs_snpp,2026,11,2026-11-01,2,6059.16,0.0666667,0,0,low_clear_coverage
+Punjab,Muktsar,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Nawan Shehar,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Nawan Shehar,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Nawan Shehar,viirs_snpp,2026,11,2026-11-01,2,3021.13,0.0666667,1,0.000331002,low_clear_coverage
+Punjab,Nawan Shehar,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Patiala,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Patiala,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Patiala,viirs_snpp,2026,11,2026-11-01,2,8654.91,0.0666667,5.99608,0.000692795,low_clear_coverage
+Punjab,Patiala,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Rupnagar,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Rupnagar,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Rupnagar,viirs_snpp,2026,11,2026-11-01,2,4821.5,0.0662669,1,0.000207404,low_clear_coverage
+Punjab,Rupnagar,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Sangrur,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Sangrur,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Punjab,Sangrur,viirs_snpp,2026,11,2026-11-01,2,11855.4,0.0666554,22.498,0.0018977,low_clear_coverage
+Punjab,Sangrur,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Almora,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Almora,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Almora,viirs_snpp,2026,11,2026-11-01,2,6737.84,0.0620986,0,0,low_clear_coverage
+Uttarakhand,Almora,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Bageshwar,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Bageshwar,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Bageshwar,viirs_snpp,2026,11,2026-11-01,2,4103.38,0.0523105,0,0,low_clear_coverage
+Uttarakhand,Bageshwar,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Chamoli,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Chamoli,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Chamoli,viirs_snpp,2026,11,2026-11-01,2,10395.9,0.0395866,3,0.000288576,low_clear_coverage
+Uttarakhand,Chamoli,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Champawat,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Champawat,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Champawat,viirs_snpp,2026,11,2026-11-01,2,3761.1,0.0637645,0,0,low_clear_coverage
+Uttarakhand,Champawat,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Dehra Dun,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Dehra Dun,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Dehra Dun,viirs_snpp,2026,11,2026-11-01,2,6977.46,0.0651714,0,0,low_clear_coverage
+Uttarakhand,Dehra Dun,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Haridwar,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Haridwar,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Haridwar,viirs_snpp,2026,11,2026-11-01,2,5450.89,0.0659908,0,0,low_clear_coverage
+Uttarakhand,Haridwar,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Naini Tal,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Naini Tal,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Naini Tal,viirs_snpp,2026,11,2026-11-01,2,8800.27,0.0620566,0,0,low_clear_coverage
+Uttarakhand,Naini Tal,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Pauri Garhwal,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Pauri Garhwal,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Pauri Garhwal,viirs_snpp,2026,11,2026-11-01,2,12145.1,0.0645767,0,0,low_clear_coverage
+Uttarakhand,Pauri Garhwal,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Pithoragarh,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Pithoragarh,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Pithoragarh,viirs_snpp,2026,11,2026-11-01,2,10837.1,0.0444249,0,0,low_clear_coverage
+Uttarakhand,Pithoragarh,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Rudra Prayag,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Rudra Prayag,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Rudra Prayag,viirs_snpp,2026,11,2026-11-01,2,1489.59,0.0359497,0,0,low_clear_coverage
+Uttarakhand,Rudra Prayag,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Tehri Garhwal,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Tehri Garhwal,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Tehri Garhwal,viirs_snpp,2026,11,2026-11-01,2,8693.76,0.0571105,0,0,low_clear_coverage
+Uttarakhand,Tehri Garhwal,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Udham Singh Nagar,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Udham Singh Nagar,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Udham Singh Nagar,viirs_snpp,2026,11,2026-11-01,2,6406.75,0.066475,1,0.000156085,low_clear_coverage
+Uttarakhand,Udham Singh Nagar,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Uttarkashi,aqua,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Uttarkashi,terra,2026,12,2026-12-01,0,0,0,0,,no_images
+Uttarakhand,Uttarkashi,viirs_snpp,2026,11,2026-11-01,2,9300.44,0.0414764,0,0,low_clear_coverage
+Uttarakhand,Uttarkashi,viirs_snpp,2026,12,2026-12-01,0,0,0,0,,no_images
