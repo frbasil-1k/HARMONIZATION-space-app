@@ -3,3 +3,5 @@
 credentials*
 *.ipynb_checkpoints
 data/raw/
+__pycache__/
+*.pyc
