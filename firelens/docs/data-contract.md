@@ -110,7 +110,7 @@ The app must display, wherever the map appears:
 |---|---|---|
 | V1 | Row count equals `N_districts × 3 × 132`, with no duplicate primary keys | Missing export task, duplicated merge, or a district dropped by a spatial join |
 | V2 | Exactly the 3 allowed sensor values appear; every district has rows for all 3 | A sensor export failed or was named differently |
-| V3 | No nulls in `state, district, sensor, year, month, fire_pixel_days, clear_pixel_days, n_images`; `year` 2016–2026; `month` 1–12; counts and `n_images` non-negative | Wrong column mapping in the merge, or text in numeric fields |
+| V3 | No nulls in `state, district, sensor, year, month, fire_pixel_days, clear_pixel_days, n_images`; `year` 2016–2026; `month` 1–12; counts and `n_images` non-negative; rows with `n_images == 0` have both counts `0` and `mean_frp_mw` empty | Wrong column mapping in the merge, or text in numeric fields |
 | V4 | `fire_pixel_days <= clear_pixel_days` in every row | Clear-view mask and fire mask disagree (usually the `== 5`-only mistake) |
 | V5 | Mean `clear_pixel_days` in Jul–Sep is lower than in the other months (globally, and in ≥ 90 % of districts) | Date filter or clear-view rule wrong; also fires when the export is not really monthly |
 | V6 | `mean_frp_mw >= 0`; null exactly where `fire_pixel_days == 0`, non-null where `fire_pixel_days > 0` | FRP divided by the wrong count, or `unmask(0)` leaked zeros into no-fire rows |

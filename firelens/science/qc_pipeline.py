@@ -365,13 +365,35 @@ def run_quality_checks(df: pd.DataFrame, is_full_dataset: bool = True) -> dict[s
             | (df["n_images"].fillna(0) < 0)
         ).sum()
     )
-    ok = total_nulls == 0 and bad_year == 0 and bad_month == 0 and bad_date == 0 and negative == 0
+    # n_images == 0 means "no data": both counts must be 0 and FRP empty. Otherwise
+    # add_metrics() turns real detections into NaN activity and export_gaps() files them
+    # as "no_images", so a mis-mapped n_images column would silently hide data.
+    no_image_rows = df["n_images"] == 0
+    data_without_images = int(
+        (
+            no_image_rows
+            & (
+                (df["fire_pixel_days"].fillna(0) != 0)
+                | (df["clear_pixel_days"].fillna(0) != 0)
+                | df["mean_frp_mw"].notna()
+            )
+        ).sum()
+    )
+    ok = (
+        total_nulls == 0
+        and bad_year == 0
+        and bad_month == 0
+        and bad_date == 0
+        and negative == 0
+        and data_without_images == 0
+    )
     worst = ", ".join(f"{c}={n}" for c, n in null_counts.items() if n) or "none"
     report(
         "V3 required fields and domains",
         ok,
         f"nulls={total_nulls} ({worst}), year outside {PERIOD_START[0]}-{PERIOD_END[0]}={bad_year}, "
-        f"month outside 1-12={bad_month}, unparseable dates={bad_date}, negative counts={negative}",
+        f"month outside 1-12={bad_month}, unparseable dates={bad_date}, negative counts={negative}, "
+        f"n_images=0 rows with counts or FRP={data_without_images}",
     )
 
     # ---- V4: fire is a subset of clear ----------------------------------------------

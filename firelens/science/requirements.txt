@@ -1,0 +1,6 @@
+# Dependencies for science/run_qc.py and science/qc_pipeline.py
+# Install from firelens/: pip install -r science/requirements.txt
+pandas
+numpy
+scipy
+matplotlib
