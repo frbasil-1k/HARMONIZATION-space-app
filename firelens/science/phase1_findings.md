@@ -26,9 +26,9 @@ python science/run_qc.py --input data/district_monthly.csv
 > VIIRS activity peaks in **`November`** (Oct–Nov mean `0.0034` vs. annual `0.0008`), consistent with
 > paddy-residue burning, with a secondary **Apr–May** peak (`0.0012`) from wheat residue.
 > VIIRS and Aqua agree across all `6,419` shared district-months (`r = 0.913`, `p < 1e-16`), with
-> VIIRS reading a ratio of `0.95×` across active months — the first quantitative case for harmonization.
+> VIIRS reading a ratio of `0.83×` (OLS slope `0.73`) — the first quantitative case for harmonization.
 > `Naini Tal` shows a **spring Apr–May** forest-fire season (activity `0.0006` vs. `0.0001` annual).
-> `196` of `19,404` rows (`1.0%`) are gaps, concentrated in `2026-12 (147 no-image) and 49 low-coverage rows`, and are shown as blank/hatched
+> `196` of `19,404` rows (`1.0%`) are gaps, — 147 `no_images` rows in `2026-12` plus 49 `low_clear_coverage` rows in partial `2026-11` VIIRS (only 2 images so far), and are shown as blank/hatched
 > cells rather than zeros. **Caveat:** activity is a share of clearly-seen land pixels, not a
 > count of fires; GAUL boundaries are not official; months after the last available image are
 > no-data, not no-fire.
@@ -56,20 +56,20 @@ Any FAIL: none (8/8 PASS after R1 patched 4 missing Terra yearly exports).
 
 | Quantity | Value | Where it came from |
 |---|---|---|
-| Districts × states | `__` × `__` | `df[['state','district']].drop_duplicates()` |
-| Rows in file | `____` | `len(df)` |
-| Ludhiana Oct–Nov mean activity (VIIRS) | `____` | `plot1_ludhiana_seasonality.png` |
-| Ludhiana Apr–May mean activity (VIIRS) | `____` | same |
-| Oct–Nov / annual ratio (Ludhiana, VIIRS) | `____×` | profile mean |
-| VIIRS vs Aqua Pearson `r` (`p`) | `____` (`____`) | `plot2_sensor_agreement.png` |
-| Overlapping district-months in plot 2 | `____` | same |
-| Median VIIRS / Aqua activity ratio | `____×` | same |
-| Uttarakhand district used for plot 3 | `____` | `plot3_uttarakhand_forest.png` |
-| Spring Apr–May vs annual activity, that district | `____` vs `____` | same |
-| Gap rows / share of file | `____` / `__%` | `science/gaps.csv` |
-| Districts with ≥ 6 fully missing months | `____` | gaps grouped by district and year |
-| Share of rows with `n_images == 0` | `__%` | `df.n_images.eq(0).mean()` |
-| Median clear-view coverage across rows | `__%` | `clear_coverage` median |
+| Districts × states | 49 × 3 | df[['state','district']].drop_duplicates() |
+| Rows in file | 19,404 | len(df) |
+| Ludhiana Oct–Nov mean activity (VIIRS) | 0.0034 | plot1_ludhiana_seasonality.png |
+| Ludhiana Apr–May mean activity (VIIRS) | 0.0012 | same |
+| Oct–Nov / annual ratio (Ludhiana, VIIRS) | 4.25× | profile mean (0.0034 / 0.0008) |
+| VIIRS vs Aqua Pearson r (p) | 0.913 (< 1e-16) | plot2_sensor_agreement.png |
+| Overlapping district-months in plot 2 | 6,419 | same |
+| Median VIIRS / Aqua ratio (OLS slope) | 0.83× (0.73) | plot2_sensor_agreement.png |
+| Uttarakhand district used for plot 3 | Naini Tal | plot3_uttarakhand_forest.png |
+| Spring Apr–May vs annual activity, that district | 0.0006 vs 0.0001 | same |
+| Gap rows / share of file | 196 / 1.0% | science/gaps.csv (147 no-image, 49 low-coverage) |
+| Districts with ≥ 6 fully missing months | 0 | gaps grouped by district and year |
+| Share of rows with n_images == 0 | 0.76% | df.n_images.eq(0).mean() |
+| Median clear-view coverage across rows | 91.0% | clear_coverage median |
 
 ---
 
@@ -95,9 +95,9 @@ Notes: `153c70b153c70b153c70b153c70b153c70b153c70b153c70b______`
 
 | Observation | First suspicion | What we checked | Verdict |
 |---|---|---|---|
-| `153c70b153c70b` | `153c70b____` | `153c70b____` | `153c70b____` |
-| `153c70b153c70b` | `153c70b____` | `153c70b____` | `153c70b____` |
-| `153c70b153c70b` | `153c70b____` | `153c70b____` | `153c70b____` |
+| Initial CSV had 17,052 rows (2,352 short of 19,404) | Districts missing from export | Checked sensor-year counts; traced to 4 missing Terra yearly exports (4 × 49 × 12 = 2,352) | Fixed by R1 (153c70b); re-run passed 8/8 |
+| Monsoon clear-pixel reduction is weak (~6% lower; 4/49 hill districts higher in Jul–Sep) | Cloud mask missing monsoon cloud or winter snow suppressing non-monsoon view | Checked V5 across districts (consistent with R1 PR #5); 45/49 districts conform | Accepted for Phase 1; audit daily cloud mask in Phase 2 |
+| VIIRS reads lower than Aqua (0.83× median ratio, slope 0.73) | Expected VIIRS normalized activity to exceed Aqua | Checked clear_pixel_days denominator: VIIRS has higher clear-land pixel counts than MODIS | Empirical baseline for Phase 2 seasonal calibration |
 
 Known, accepted artefacts (not bugs):
 
