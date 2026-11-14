@@ -3,9 +3,10 @@
     python gee/merge_hotspots.py [folder]     # default: data/raw
 
 Put the downloaded fl_hot_*.csv files and fl_hotspot_districts.csv anywhere under that
-folder. One row per hotspot pixel per day; the app filters it for the "hotspots CSV" download.
+folder (several Drive zips and "name(1).csv" duplicate downloads are fine). One row per hotspot pixel per day; the app filters it for the "hotspots CSV" download.
 Exits 1 if any check fails.
 """
+import re
 import sys
 from pathlib import Path
 
@@ -18,12 +19,30 @@ COLUMNS = ["state", "district", "sensor", "acq_date", "latitude", "longitude", "
 MAX_MB = 20  # repo rule: no file over 20 MB
 
 
+YEARS = range(2016, 2027)
+COPY_SUFFIX = re.compile(r"\s*\(\d+\)$")  # "fl_hot_aqua_2022(1).csv": a browser's second copy
+
+
+def unique_files(raw: Path, pattern: str) -> dict[str, Path]:
+    """Every CSV matching pattern under raw, by export name; duplicate downloads read once.
+
+    Drive splits big folders into several zips, and browsers save a repeated download as
+    "name(1).csv". Both copies hold the same export, so only the first is kept.
+    """
+    seen: dict[str, Path] = {}
+    for path in sorted(raw.rglob(pattern), key=lambda p: (COPY_SUFFIX.sub("", p.stem), p.name)):
+        seen.setdefault(COPY_SUFFIX.sub("", path.stem), path)
+    return seen
+
+
 def read_unique(raw: Path, pattern: str) -> list[pd.DataFrame]:
-    """Every CSV matching pattern under raw; a file name found twice is read once."""
-    seen = {}
-    for path in sorted(raw.rglob(pattern)):
-        seen.setdefault(path.name, path)
-    return [pd.read_csv(p) for p in seen.values()]
+    return [pd.read_csv(p) for p in unique_files(raw, pattern).values()]
+
+
+def missing_exports(raw: Path) -> list[str]:
+    """Sensor-year exports (fl_hot_<sensor>_<year>) not found under raw."""
+    have = set(unique_files(raw, "fl_hot_*.csv"))
+    return [f"fl_hot_{s}_{y}" for s in sorted(SENSOR_NAMES) for y in YEARS if f"fl_hot_{s}_{y}" not in have]
 
 
 def build(raw: Path) -> pd.DataFrame:
@@ -41,13 +60,15 @@ def build(raw: Path) -> pd.DataFrame:
     return df[COLUMNS].sort_values(["state", "district", "acq_date", "sensor"], ignore_index=True)
 
 
-def checks(df: pd.DataFrame, monthly: pd.DataFrame) -> bool:
+def checks(df: pd.DataFrame, monthly: pd.DataFrame, missing: list[str]) -> bool:
     results = []
 
     def check(name, ok, detail=""):
         print("PASS" if ok else "FAIL", name, detail)
         results.append(bool(ok))
 
+    check(f"H0 all {len(SENSOR_NAMES) * len(YEARS)} sensor-year exports present", not missing,
+          f"missing: {', '.join(missing)}" if missing else "")
     mb = OUT.stat().st_size / 1e6
     check(f"H1 file under {MAX_MB} MB", mb < MAX_MB, f"{mb:.1f} MB, {len(df):,} rows")
     check("H2 exactly the 3 sensors", set(df.sensor) == SENSOR_NAMES, sorted(set(df.sensor)))
@@ -81,10 +102,14 @@ def checks(df: pd.DataFrame, monthly: pd.DataFrame) -> bool:
 
 def main() -> None:
     raw = Path(sys.argv[1]) if len(sys.argv) > 1 else DATA / "raw"
+    missing = missing_exports(raw)
     df = build(raw)
     df.to_csv(OUT, index=False, compression="gzip")
     print(f"{len(df):,} hotspots -> {OUT}")
-    sys.exit(0 if checks(df, pd.read_csv(DATA / "district_monthly.csv")) else 1)
+    ok = checks(df, pd.read_csv(DATA / "district_monthly.csv"), missing)
+    if not ok:
+        print(f"\nChecks failed: do not commit {OUT.name}. Fix the input and run again.")
+    sys.exit(0 if ok else 1)
 
 
 if __name__ == "__main__":
