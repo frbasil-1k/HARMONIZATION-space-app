@@ -76,18 +76,19 @@ Any FAIL: none (8/8 PASS after R1 patched 4 missing Terra yearly exports).
 ## 4. What looks right
 
 - [x] Row count and grid are exactly as contracted; no duplicate district-month-sensor keys.
-- [x] Monsoon suppression of clear view is visible (Jul–Sep mean clear pixels << other months).
+- [x] Jul–Sep clear view is lower than other months, but only by ~6% (45/49 districts);
+      weaker than expected, see section 5.
 - [x] Ludhiana shows the Oct–Nov paddy band and the smaller Apr–May wheat band in every year,
       not just on average.
-- [x] VIIRS and Aqua rise and fall together; the fitted slope is positive and the correlation
-      is high, with VIIRS biased high as expected from its finer resolution and overpass.
+- [x] VIIRS and Aqua rise and fall together (r = 0.913), but VIIRS reads lower than Aqua
+      (median 0.83×, slope 0.73), not higher as expected; see section 5.
 - [x] At least one Uttarakhand district shows a spring (Apr–May) forest-fire season distinct
       from the Punjab crop calendar.
 - [x] `mean_frp_mw` behaves: nulls only where there is no fire, and values are plausible
       (single-digit to low-tens of MW).
 - [x] No activity value outside `[0, 1]`.
 
-Notes: `153c70b153c70b153c70b153c70b153c70b153c70b153c70b______`
+Notes: the two unexpected results (weak monsoon drop, VIIRS lower than Aqua) are in section 5.
 
 ---
 
@@ -139,4 +140,4 @@ Known, accepted artefacts (not bugs):
 - [x] `science/gaps.csv` committed and handed to R3 for hatching
 - [x] This file's headline paragraph filled in and posted
 
-**Sign-off:** R2 `153c70b__` at `__:__` IST
+**Sign-off:** R2 `__________` at `__:__` IST
