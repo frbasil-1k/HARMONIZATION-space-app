@@ -60,7 +60,7 @@ Any FAIL: none (8/8 PASS after R1 patched 4 missing Terra yearly exports).
 | Rows in file | 19,404 | len(df) |
 | Ludhiana Oct–Nov mean activity (VIIRS) | 0.0034 | plot1_ludhiana_seasonality.png |
 | Ludhiana Apr–May mean activity (VIIRS) | 0.0012 | same |
-| Oct–Nov / annual ratio (Ludhiana, VIIRS) | 4.25× | profile mean (0.0034 / 0.0008) |
+| Oct–Nov / annual ratio (Ludhiana, VIIRS) | 4.23× | profile mean (0.0034 / 0.0008) |
 | VIIRS vs Aqua Pearson r (p) | 0.913 (< 1e-16) | plot2_sensor_agreement.png |
 | Overlapping district-months in plot 2 | 6,419 | same |
 | Median VIIRS / Aqua ratio (OLS slope) | 0.83× (0.73) | plot2_sensor_agreement.png |
@@ -69,7 +69,7 @@ Any FAIL: none (8/8 PASS after R1 patched 4 missing Terra yearly exports).
 | Gap rows / share of file | 196 / 1.0% | science/gaps.csv (147 no-image, 49 low-coverage) |
 | Districts with ≥ 6 fully missing months | 0 | gaps grouped by district and year |
 | Share of rows with n_images == 0 | 0.76% | df.n_images.eq(0).mean() |
-| Median clear-view coverage across rows | 91.0% | clear_coverage median |
+| Median clear-view coverage across rows | 93.3% | clear_coverage median |
 
 ---
 
@@ -96,8 +96,8 @@ Notes: `153c70b153c70b153c70b153c70b153c70b153c70b153c70b______`
 | Observation | First suspicion | What we checked | Verdict |
 |---|---|---|---|
 | Initial CSV had 17,052 rows (2,352 short of 19,404) | Districts missing from export | Checked sensor-year counts; traced to 4 missing Terra yearly exports (4 × 49 × 12 = 2,352) | Fixed by R1 (153c70b); re-run passed 8/8 |
-| Monsoon clear-pixel reduction is weak (~6% lower; 4/49 hill districts higher in Jul–Sep) | Cloud mask missing monsoon cloud or winter snow suppressing non-monsoon view | Checked V5 across districts (consistent with R1 PR #5); 45/49 districts conform | Accepted for Phase 1; audit daily cloud mask in Phase 2 |
-| VIIRS reads lower than Aqua (0.83× median ratio, slope 0.73) | Expected VIIRS normalized activity to exceed Aqua | Checked clear_pixel_days denominator: VIIRS has higher clear-land pixel counts than MODIS | Empirical baseline for Phase 2 seasonal calibration |
+| Monsoon clear-pixel reduction is weak (~6% lower; 4/49 districts higher in Jul–Sep) | Cloud mask missing monsoon cloud or winter snow suppressing non-monsoon view | Checked V5 across districts (consistent with R1 PR #5); 45/49 districts conform | Accepted for Phase 1; audit daily cloud mask in Phase 2 |
+| VIIRS reads lower than Aqua (0.83× median ratio, slope 0.73) | Expected VIIRS normalized activity to exceed Aqua | Partly explained by clear_pixel_days denominator: VIIRS sees ~6% more clear pixels per image than Aqua (~3,088 vs 2,922) | Empirical baseline for Phase 2 seasonal calibration |
 
 Known, accepted artefacts (not bugs):
 
