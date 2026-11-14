@@ -20,12 +20,14 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DATA_PATH = DATA_DIR / "district_monthly.csv"
 HARMONIZED_PATH = DATA_DIR / "district_harmonized.csv"  # from science/harmonize.py
 GEO_PATH = DATA_DIR / "districts.geojson"
+HOTSPOTS_PATH = DATA_DIR / "hotspots.csv.gz"  # from gee/merge_hotspots.py; optional
 MOCK_PATH = DATA_DIR / "mock_district_monthly.csv"  # from app/make_mock.py
 MOCK_GEO_PATH = DATA_DIR / "mock_districts.geojson"
 
 CONTRACT_COLUMNS = ["state", "district", "sensor", "year", "month", "fire_pixel_days",
                     "clear_pixel_days", "mean_frp_mw", "n_images"]
 MIN_YEARS = 3  # observed years of a calendar month needed before comparing against them
+MIN_IMAGE_SHARE = 0.5  # metric cards skip a month with fewer daily images than this share of its days
 ACTIVITY_NOTE = (
     "Activity = fire pixel-days ÷ clearly observed pixel-days: the share of clearly "
     "seen land with a hotspot detection. Months are UTC calendar months. "
@@ -350,10 +352,40 @@ def yearly_chart(summary: pd.DataFrame, title: str) -> go.Figure:
 
 # --- Metric cards ---------------------------------------------------------------
 
+def days_in(row: pd.Series) -> int:
+    return calendar.monthrange(int(row["year"]), int(row["month"]))[1]
+
+
 def latest_observed(series: pd.DataFrame) -> pd.Series | None:
-    """Most recent row with defined activity (skips trailing no-data months)."""
+    """Most recent month with defined activity and at least half its daily images.
+
+    Skips trailing no-data months and a current month still too early to judge
+    (e.g. 2 of 30 images), so the headline never rests on a few days.
+    """
     observed = series.dropna(subset=["activity"]).sort_values(["year", "month"])
+    enough = observed["n_images"] >= observed.apply(days_in, axis=1) * MIN_IMAGE_SHARE
+    observed = observed[enough]
     return None if observed.empty else observed.iloc[-1]
+
+
+def skipped_note(series: pd.DataFrame, latest: pd.Series) -> str | None:
+    """Name the newer, too-incomplete month the cards skipped, if there is one."""
+    newer = series[(series["year"] * 12 + series["month"] > latest["year"] * 12 + latest["month"])
+                   & (series["n_images"] > 0)].sort_values(["year", "month"])
+    if newer.empty:
+        return None
+    row = newer.iloc[-1]
+    return (f"{month_label(int(row['year']), int(row['month']))} is still in progress "
+            f"({'at most ' if row['sensor'] == HARMONIZED else ''}{int(row['n_images'])} of "
+            f"{days_in(row)} daily images so far), so the cards compare the latest month with "
+            f"at least half its images.")
+
+
+def ordinal(n: float) -> str:
+    """1st, 2nd, 3rd, 4th, 11th, 12th, 13th, 21st, ..."""
+    n = int(round(n))
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
 
 
 def month_history(series: pd.DataFrame, month: int) -> pd.Series:
@@ -383,7 +415,7 @@ def peak_months(grid: pd.DataFrame, n: int = 3) -> list[str]:
 
 def partial_note(row: pd.Series) -> str | None:
     """Say so when the month has fewer daily images than calendar days."""
-    days = calendar.monthrange(int(row["year"]), int(row["month"]))[1]
+    days = days_in(row)
     images = int(row["n_images"])
     if images >= days:
         return None
@@ -407,8 +439,11 @@ def render_metrics(series: pd.DataFrame, grid: pd.DataFrame) -> None:
     cols[0].metric(f"{label} vs {MONTH_NAMES[month - 1]} median",
                    "—" if ratio is None else f"{ratio:.2f}×", help=note, **partial)
     cols[1].metric(f"{label} percentile rank",
-                   "—" if pct is None else f"{pct:.0f}th", help=note, **partial)
+                   "—" if pct is None else ordinal(pct), help=note, **partial)
     cols[2].metric("Peak months (median activity)", " · ".join(peak_months(grid)) or "—")
+    skipped = skipped_note(series, latest)
+    if skipped:
+        st.caption(skipped)
 
 
 # --- Download -------------------------------------------------------------------
@@ -425,11 +460,37 @@ def harmonized_csv(rows: pd.DataFrame) -> bytes:
     return rows.sort_values(["year", "month"]).to_csv(index=False).encode("utf-8")
 
 
-def render_downloads(df: pd.DataFrame, harmonized: pd.DataFrame | None,
-                     state: str, district: str, span: str) -> None:
+@st.cache_data
+def load_hotspots(path: Path) -> pd.DataFrame:
+    """Every hotspot pixel-day, with a year*12+month index for date filtering."""
+    df = pd.read_csv(path, dtype={"acq_date": str})
+    df["ym"] = df["acq_date"].str[:4].astype(int) * 12 + df["acq_date"].str[5:7].astype(int)
+    return df
+
+
+def hotspots_csv(state: str, district: str, start: tuple[int, int], end: tuple[int, int]) -> bytes | None:
+    """The district's individual hotspots in the selected dates, or None without the file."""
+    if not HOTSPOTS_PATH.exists():
+        return None
+    df = load_hotspots(HOTSPOTS_PATH)
+    keep = ((df["state"] == state) & (df["district"] == district)
+            & df["ym"].between(start[0] * 12 + start[1], end[0] * 12 + end[1]))
+    return df.loc[keep].drop(columns="ym").to_csv(index=False).encode("utf-8")
+
+
+def render_downloads(df: pd.DataFrame, harmonized: pd.DataFrame | None, state: str, district: str,
+                     span: str, start: tuple[int, int], end: tuple[int, int]) -> None:
     """CSV buttons for the selected district and dates."""
     stem = f"{state}_{district}_{span}".replace(" ", "_")
-    cols = st.columns([3, 3, 4])
+    cols = st.columns([3, 3, 3, 1])
+    hotspots = hotspots_csv(state, district, start, end)
+    if hotspots is not None:
+        cols[2].download_button(
+            "Download hotspots CSV", data=hotspots, file_name=f"{stem}_hotspots.csv", mime="text/csv",
+            help="Every hotspot detection in this district and these dates: sensor, UTC date, "
+                 "pixel-centre latitude/longitude, FRP (MW) and confidence. One row per 1 km pixel "
+                 "per day per sensor, as recorded (not harmonized); don't add sensors together.",
+        )
     if harmonized is not None:
         cols[0].download_button(
             "Download harmonized CSV", data=harmonized_csv(harmonized),
@@ -646,7 +707,7 @@ def main() -> None:
         st.caption(ANOMALY_NOTE)
     with sensors_tab:
         render_comparison(district_rows, scaled, place)
-    render_downloads(df[dated], scaled, state, district, file_span)
+    render_downloads(df[dated], scaled, state, district, file_span, start, end)
     st.subheader(f"{district}, {state}")
     render_map(geo_path, state, district)
 
