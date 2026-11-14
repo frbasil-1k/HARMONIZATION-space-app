@@ -22,13 +22,13 @@ If the raw counts are combined, burning appears to change whenever a satellite i
 - **Harmonized series:** one MODIS + VIIRS record per district, on the VIIRS scale; each sensor is also available on its own
 - **Burning calendar:** a month × year heatmap per district (2016–2026), with a colour-blind-safe colour scale, coloured by activity or by hotspot count
 - **Date range:** limit every view, metric and download to any span of months
-- **This month vs history:** the latest month compared with the median of the same month across the selected years, plus its percentile rank
+- **This month vs history:** the latest month with at least half its daily images, compared with the median of the same month across the selected years, plus its percentile rank (a month still in progress is named, and shown in the calendar)
 - **Peak season:** the months with the highest typical activity
 - **Yearly view:** mean monthly activity per year, to compare years
 - **Anomaly view:** each month's difference from the median of the same calendar month
 - **Sensor comparison:** monthly activity from each satellite, as recorded and after harmonization
 - **Location search:** jump to a district by latitude and longitude
-- **Download:** the district's harmonized and per-sensor monthly data as CSV
+- **Download:** the district's harmonized and per-sensor monthly data, and the individual hotspot detections (date, location, FRP, sensor) for the selected dates, as CSV; every chart as PNG
 
 ## How it works
 
@@ -94,11 +94,17 @@ Changes to this format need the science lead's approval and an entry in `docs/de
 - District boundaries come from FAO GAUL and are not official boundaries of India. They are used for orientation only.
 - The most recent months depend on when NASA publishes the data in Google Earth Engine.
 - NOAA-20 and NOAA-21 VIIRS are not yet part of the calendar.
+- The calendar covers 2016–2026, the decade in which all three sensors overlap, not yet the early 2000s.
+- Areas are the 49 districts of Punjab, Haryana and Uttarakhand; drawing a custom area is not yet supported.
+- Since 2024, VIIRS records far fewer Punjab hotspots than Aqua MODIS (Nov 2025: 487 vs 4,288 pixel-days, against near-equal counts before 2023), possibly because burning moved later in the day. The fixed 2016–2022 ratios cannot follow this, so the recent decline may be partly a detection effect.
+- New months arrive by re-running the Earth Engine exports; there is no automatic near-real-time refresh yet.
+- VIIRS is used at 1 km (VNP14A1) so that all sensors share one grid; its 375 m detail is not used.
 
 ## Next steps
 
 - Add NOAA-20 and NOAA-21 VIIRS, normalized for their extra overpasses
-- Extend the calendar back to 2003 using MODIS and the 2016–2026 calibration
+- Extend the calendar back to 2001 (Terra) and 2003 (Aqua) using MODIS and the 2016–2026 calibration
+- A time-varying VIIRS ÷ MODIS ratio, to follow the post-2023 divergence
 - An equal-area grid, so any drawn area can be analysed
 - A context panel per area (land cover, protected areas, settlements, weather)
 

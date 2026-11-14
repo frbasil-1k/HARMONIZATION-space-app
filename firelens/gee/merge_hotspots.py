@@ -1,0 +1,91 @@
+"""Merge the hotspot exports (gee/export_hotspots.js) into data/hotspots.csv.gz and check them.
+
+    python gee/merge_hotspots.py [folder]     # default: data/raw
+
+Put the downloaded fl_hot_*.csv files and fl_hotspot_districts.csv anywhere under that
+folder. One row per hotspot pixel per day; the app filters it for the "hotspots CSV" download.
+Exits 1 if any check fails.
+"""
+import sys
+from pathlib import Path
+
+import pandas as pd
+
+DATA = Path(__file__).resolve().parent.parent / "data"
+OUT = DATA / "hotspots.csv.gz"
+SENSOR_NAMES = {"terra", "aqua", "viirs_snpp"}
+COLUMNS = ["state", "district", "sensor", "acq_date", "latitude", "longitude", "frp_mw", "confidence"]
+MAX_MB = 20  # repo rule: no file over 20 MB
+
+
+def read_unique(raw: Path, pattern: str) -> list[pd.DataFrame]:
+    """Every CSV matching pattern under raw; a file name found twice is read once."""
+    seen = {}
+    for path in sorted(raw.rglob(pattern)):
+        seen.setdefault(path.name, path)
+    return [pd.read_csv(p) for p in seen.values()]
+
+
+def build(raw: Path) -> pd.DataFrame:
+    """Raw exports -> one tidy table with exact GAUL names."""
+    parts = [p for p in read_unique(raw, "fl_hot_*.csv") if len(p)]
+    lookup = read_unique(raw, "fl_hotspot_districts.csv")
+    if not parts or not lookup:
+        sys.exit(f"no fl_hot_*.csv or fl_hotspot_districts.csv under {raw}")
+    df = pd.concat(parts, ignore_index=True)
+    names = lookup[0].rename(columns={"ADM2_CODE": "adm2_code", "ADM1_NAME": "state", "ADM2_NAME": "district"})
+    df = df.merge(names, on="adm2_code", how="left")
+    df["frp_mw"] = df["frp_mw"].where(df["frp_mw"] >= 0).round(1)  # -1 = FRP missing
+    df["confidence"] = df["fire_mask"].map({8: "nominal", 9: "high"})
+    df[["latitude", "longitude"]] = df[["latitude", "longitude"]].round(4)
+    return df[COLUMNS].sort_values(["state", "district", "acq_date", "sensor"], ignore_index=True)
+
+
+def checks(df: pd.DataFrame, monthly: pd.DataFrame) -> bool:
+    results = []
+
+    def check(name, ok, detail=""):
+        print("PASS" if ok else "FAIL", name, detail)
+        results.append(bool(ok))
+
+    mb = OUT.stat().st_size / 1e6
+    check(f"H1 file under {MAX_MB} MB", mb < MAX_MB, f"{mb:.1f} MB, {len(df):,} rows")
+    check("H2 exactly the 3 sensors", set(df.sensor) == SENSOR_NAMES, sorted(set(df.sensor)))
+    blanks = df.drop(columns="frp_mw").isna().sum()
+    check("H3 no blanks (FireMask 8/9, known district)", blanks.sum() == 0, blanks[blanks > 0].to_dict())
+    dates = pd.to_datetime(df.acq_date, errors="coerce")
+    check("H4 dates in 2016-01-01..2026-12-31", dates.between("2016-01-01", "2026-12-31").all(),
+          f"{dates.min():%Y-%m-%d}..{dates.max():%Y-%m-%d}")
+    known = set(zip(monthly.state, monthly.district))
+    unknown = set(zip(df.state, df.district)) - known
+    check("H5 names match district_monthly.csv", not unknown, sorted(unknown)[:5])
+
+    # Same grid and fire rule as the monthly table; only border pixels differ (whole
+    # pixel by centre here, area-weighted there), so totals agree closely but not exactly.
+    count = (df.assign(year=dates.dt.year, month=dates.dt.month)
+             .groupby(["state", "district", "sensor", "year", "month"]).size().rename("hotspots"))
+    both = monthly.set_index(count.index.names)["fire_pixel_days"].to_frame().join(count).fillna(0)
+    ratio = both.groupby("sensor").sum().eval("hotspots / fire_pixel_days").round(3)
+    r = both["hotspots"].corr(both["fire_pixel_days"])
+    check("H6 counts match fire_pixel_days (total within 10%, r >= 0.95)",
+          ratio.between(0.9, 1.1).all() and r >= 0.95, f"ratio {ratio.to_dict()}, r={r:.3f}")
+
+    lu = both.xs(("Ludhiana", "viirs_snpp"), level=("district", "sensor"))["hotspots"]
+    peak = lu[lu.index.get_level_values("month").isin([10, 11])].mean()
+    rest = lu[~lu.index.get_level_values("month").isin([10, 11])].mean()
+    check("H7 Ludhiana VIIRS Oct-Nov peak", peak > 3 * rest, f"{peak:.0f} vs {rest:.0f} per month")
+    check("H8 frp_mw >= 0 where present", (df.frp_mw.dropna() >= 0).all(),
+          f"{df.frp_mw.isna().sum()} rows without FRP")
+    return all(results)
+
+
+def main() -> None:
+    raw = Path(sys.argv[1]) if len(sys.argv) > 1 else DATA / "raw"
+    df = build(raw)
+    df.to_csv(OUT, index=False, compression="gzip")
+    print(f"{len(df):,} hotspots -> {OUT}")
+    sys.exit(0 if checks(df, pd.read_csv(DATA / "district_monthly.csv")) else 1)
+
+
+if __name__ == "__main__":
+    main()
