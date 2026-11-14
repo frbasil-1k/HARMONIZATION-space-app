@@ -28,7 +28,9 @@ If the raw counts are combined, burning appears to change whenever a satellite i
 - **Anomaly view:** each month's difference from the median of the same calendar month
 - **Sensor comparison:** monthly activity from each satellite, as recorded and after harmonization
 - **Location search:** jump to a district by latitude and longitude
-- **Download:** the district's harmonized and per-sensor monthly data, and the individual hotspot detections (date, location, FRP, sensor) for the selected dates, as CSV; every chart as PNG
+- **District map:** all 49 districts coloured by the latest month against each district's own median for that month; click a district to open it
+- **MODIS-only check:** the calendar rebuilt from MODIS alone, overlaid on what VIIRS saw, to show the harmonization works before VIIRS existed
+- **Download:** the district's harmonized and per-sensor monthly data, and the individual hotspot detections (date, location, FRP, sensor) for the selected dates, as CSV (the hotspot list needs `data/hotspots.csv.gz`, see `gee/README.md` step 8–9); every chart as PNG
 
 ## How it works
 
@@ -39,7 +41,7 @@ If the raw counts are combined, burning appears to change whenever a satellite i
 - **Filtering:** a pixel counts as fire when FireMask ≥ 8 (nominal or high confidence). It counts as clearly observed when FireMask is 5 (land, no fire) or ≥ 7 (fire). Cloud and missing data are excluded.
 - **Aggregation:** for each district, month and sensor, we sum fire pixel-days and clearly observed pixel-days.
 - **Metric:** activity = fire pixel-days ÷ clear pixel-days, the share of clearly observed land that was burning. Dividing by clear observations removes most of the bias from cloud cover (especially during the monsoon) and from differing overpass schedules.
-- **Harmonization:** Suomi-NPP VIIRS is the anchor sensor because it covers the whole period. Terra and Aqua MODIS are scaled to it with one ratio per state and sensor (the median VIIRS ÷ MODIS activity over 2016–2022), and the harmonized value is the mean of the sensors that saw the district clearly that month. Tested blind on 2023–2025: Pearson r = 0.83 for Aqua, 0.57 for Terra, 0.70 pooled. Details in `science/validation.md`.
+- **Harmonization:** Suomi-NPP VIIRS is the anchor sensor because it covers the whole period. Terra and Aqua MODIS are scaled to it with **one ratio per state and calendar month** (VIIRS ÷ MODIS, summed over 2016–2022), because Terra's morning pass misses far more of the afternoon crop burning in Oct–Nov than in quiet months. The harmonized value blends VIIRS with each scaled MODIS sensor, weighted by how well it predicted VIIRS in years it never saw. Only months before each MODIS orbit **drifted** (Terra from Oct 2022, Aqua from Feb 2023) are used; after that, MODIS only fills months VIIRS could not see, and those are flagged. Leave-one-year-out on 2016–2022: Terra r = 0.91 and Aqua r = 0.98 against VIIRS, both within 4% of VIIRS's total burning in the peak months; the MODIS-only reconstruction reaches r = 0.97 with a 2% bias. Details in `science/validation.md`.
 - **Baselines:** the median of each calendar month across the selected dates (at least 3 years), used for the anomaly and "vs median" views.
 
 ## Repository structure
@@ -96,7 +98,7 @@ Changes to this format need the science lead's approval and an entry in `docs/de
 - NOAA-20 and NOAA-21 VIIRS are not yet part of the calendar.
 - The calendar covers 2016–2026, the decade in which all three sensors overlap, not yet the early 2000s.
 - Areas are the 49 districts of Punjab, Haryana and Uttarakhand; drawing a custom area is not yet supported.
-- Since 2024, VIIRS records far fewer Punjab hotspots than Aqua MODIS (Nov 2025: 487 vs 4,288 pixel-days, against near-equal counts before 2023), possibly because burning moved later in the day. The fixed 2016–2022 ratios cannot follow this, so the recent decline may be partly a detection effect.
+- Since 2024, VIIRS records far fewer Punjab hotspots than Aqua MODIS (Nov 2025: 487 vs 4,288 pixel-days, against near-equal counts before 2023). Aqua's orbit has drifted to a later afternoon overpass (past 13:45 from Feb 2023, about 15:30 by mid-2026) while burning has also moved later in the day, so Aqua now sees fires that VIIRS's 13:30 pass misses. FireLens therefore stops blending drifted MODIS; the recent decline in the harmonized series is VIIRS's, and part of it may be a detection effect rather than less burning.
 - New months arrive by re-running the Earth Engine exports; there is no automatic near-real-time refresh yet.
 - VIIRS is used at 1 km (VNP14A1) so that all sensors share one grid; its 375 m detail is not used.
 
@@ -104,7 +106,8 @@ Changes to this format need the science lead's approval and an entry in `docs/de
 
 - Add NOAA-20 and NOAA-21 VIIRS, normalized for their extra overpasses
 - Extend the calendar back to 2001 (Terra) and 2003 (Aqua) using MODIS and the 2016–2026 calibration
-- A time-varying VIIRS ÷ MODIS ratio, to follow the post-2023 divergence
+- Use the VIIRS 375 m (VNP14IMG / FIRMS) detections for the hotspot list and counts
+- Model the post-drift MODIS overpass time explicitly, so drifted MODIS can be used again
 - An equal-area grid, so any drawn area can be analysed
 - A context panel per area (land cover, protected areas, settlements, weather)
 

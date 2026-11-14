@@ -67,14 +67,15 @@ NASA Earth Engine (Daily 2016–2026)
 ### Slide 4 — Harmonization & Scientific Validation
 - **Cross-Sensor Agreement:**
   - VIIRS vs Aqua activity: **r = 0.913** (p < 1e-16) across 6,419 shared district-months.
-  - Blind 2023–2025 test of the scaled MODIS against VIIRS: **r = 0.83 (Aqua), 0.57 (Terra), 0.70 pooled**.
+  - Leave-one-year-out test (2016–2022) of the scaled MODIS against VIIRS: **r = 0.98 (Aqua), 0.91 (Terra)**, peak-season totals within 4%; MODIS-only reconstruction **r = 0.97, bias 2%**.
+  - After the orbit drift (2023–2025) Aqua reads 1.8× VIIRS in the peak, so drifted MODIS is not blended.
   - Fitted ratios: VIIRS ≈ Aqua (0.91–0.97×, both early-afternoon passes) but **1.5–2.4× Terra**, whose morning pass misses afternoon burning. Without scaling, Terra would make every district look half as active.
 - **Double-Cropping Stubble Seasonality Validated:**
   - **Ludhiana (Punjab):** Accurately captures the intense post-monsoon **October–November** paddy stubble burn:
-    - Oct–Nov harmonized activity = 0.28 % of clear land vs. 0.07 % annual (**4.2×**).
+    - Oct–Nov harmonized activity = 0.37 % of clear land vs. 0.085 % annual (**4.3×**).
   - Captures the secondary **April–May** wheat-residue burning (0.10 %, 1.5× annual).
 - **Forest Fire Ecosystem Sanity Check:**
-  - **Uttarakhand (Naini Tal):** a different calendar: the spring **April–May** forest-fire season (0.068 % vs 0.017 % annual, **4.0×**), not the Oct–Nov crop peak.
+  - **Uttarakhand (Naini Tal):** a different calendar: the spring **April–May** forest-fire season (0.060 % vs 0.015 % annual, **3.9×**), not the Oct–Nov crop peak.
 - **Gaps Honesty:**
   - 196 gap rows (1.0 %: 147 with no images, 49 with under 10 % clear view) are left blank in the calendar and marked × in the anomaly view, never shown as zero.
 - _Visual: Trio of validation charts — R2's Plot 1 (Ludhiana Seasonality), Plot 2 (VIIRS vs Aqua Correlation Scatter), and Plot 3 (Uttarakhand Forest Fire Season)_
@@ -105,7 +106,7 @@ NASA Earth Engine (Daily 2016–2026)
 - Detections (pixel-days), not individual fires
 - 2016–2026 (the three-sensor overlap), not yet the early 2000s
 - 49 fixed districts; GAUL boundaries (not official India boundaries)
-- VIIRS and Aqua diverge after 2023 in Punjab: a time-varying ratio is needed
+- VIIRS and Aqua diverge after 2023 in Punjab: Aqua's orbit drift to a later overpass, plus later burning; drifted MODIS is no longer blended
 - Manual refresh: data ends at the latest processed image
 
 **Next steps**
