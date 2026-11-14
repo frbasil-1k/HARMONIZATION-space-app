@@ -443,6 +443,8 @@ def latest_observed(series: pd.DataFrame) -> pd.Series | None:
     (e.g. 2 of 30 images), so the headline never rests on a few days.
     """
     observed = series.dropna(subset=["activity"]).sort_values(["year", "month"])
+    if observed.empty:  # e.g. a date range with no data yet; apply() on an empty frame breaks
+        return None
     enough = observed["n_images"] >= observed.apply(days_in, axis=1) * MIN_IMAGE_SHARE
     observed = observed[enough]
     return None if observed.empty else observed.iloc[-1]
