@@ -25,7 +25,9 @@ var FRP_SCALE = {terra: 0.1, aqua: 0.1, viirs_snpp: 1};
 // Which tasks to create (each still needs Run in the Tasks tab).
 var MAKE_TEST_TASK = false;       // step 2 (done: handoff 1 sent): data/test_punjab_2020_viirs.csv
 var MAKE_FULL_TASKS = true;       // step 3: 33 tasks fl_<sensor>_<year>
-var MAKE_BOUNDARY_TASK = true;    // step 4: fl_districts.geojson
+var MAKE_BOUNDARY_TASK = false;   // step 4: fl_districts.geojson (done)
+// Re-run only these sensor-years (empty {} = all 33). Missing from the first export run.
+var ONLY = {terra: [2016, 2017, 2018, 2021]};
 
 var BANDS = ['fire', 'clear', 'frp'];
 var CONTRACT = ['state', 'district', 'sensor', 'year', 'month',
@@ -121,6 +123,7 @@ var REGIONS = districts(STATES);
 if (MAKE_FULL_TASKS) {
   Object.keys(SENSORS).forEach(function (sensor) {
     YEARS.forEach(function (year) {
+      if (Object.keys(ONLY).length && (ONLY[sensor] || []).indexOf(year) < 0) return;
       Export.table.toDrive({
         collection: yearTable(sensor, year, REGIONS),
         description: 'fl_' + sensor + '_' + year,
