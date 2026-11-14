@@ -238,7 +238,9 @@ def calendar_heatmap(grid: pd.DataFrame, counts: pd.DataFrame, title: str,
 def anomaly_grid(grid: pd.DataFrame) -> pd.DataFrame:
     """Each month minus that calendar month's median; NaN where too few years."""
     enough = grid.count() >= MIN_YEARS
-    return (grid - grid.median(skipna=True)).where(enough, axis="columns")
+    anomaly = grid - grid.median(skipna=True)
+    anomaly.loc[:, ~enough] = np.nan  # where(<Series>, axis="columns") raises TypeError in pandas 2.3
+    return anomaly
 
 
 def anomaly_hover(pct: pd.DataFrame, selected):
