@@ -104,3 +104,35 @@ def test_static_sources(fire_types):
     assert (static["n_calendar_months"] >= 8).all() and (static["n_months"] >= 12).all()
     # Independent evidence they are not vegetation fires: brightly lit at night.
     assert static["median_nightlight"].median() > 20
+
+
+def test_hotspot_list(monthly):
+    """data/hotspots.csv.gz: contract §7, and it adds up to the calendar (check H6)."""
+    path = DATA / "hotspots.csv.gz"
+    if not path.exists():
+        pytest.skip("hotspot list not generated in this checkout")
+    assert path.stat().st_size < 20e6
+    h = pd.read_csv(path, dtype={"acq_date": str})
+    assert list(h.columns) == ["state", "district", "sensor", "acq_date", "latitude", "longitude",
+                               "frp_mw", "confidence"]
+    assert set(h["sensor"]) == {"terra", "aqua", "viirs_snpp"}
+    assert set(h["confidence"]) <= {"nominal", "high"}
+    assert h.drop(columns="frp_mw").notna().all().all() and (h["frp_mw"].dropna() >= 0).all()
+    assert h["acq_date"].between("2016-01-01", "2026-12-31").all()
+    assert not h.duplicated().any()
+    assert set(zip(h["state"], h["district"])) <= set(zip(monthly["state"], monthly["district"]))
+    h["year"], h["month"] = h["acq_date"].str[:4].astype(int), h["acq_date"].str[5:7].astype(int)
+    counts = h.groupby(["state", "district", "sensor", "year", "month"]).size().rename("n")
+    both = monthly.set_index(counts.index.names)[["fire_pixel_days"]].join(counts).fillna(0)
+    for sensor, g in both.groupby(level="sensor"):
+        assert g["n"].sum() / g["fire_pixel_days"].sum() == pytest.approx(1.0, abs=0.02), sensor
+    by_year = both.groupby(level=["sensor", "year"]).sum()
+    active = by_year[by_year["fire_pixel_days"] > 100]
+    assert (active["n"] / active["fire_pixel_days"]).between(0.97, 1.03).all()  # no year missing
+    assert np.corrcoef(both["n"], both["fire_pixel_days"])[0, 1] > 0.99
+    # What the app's download returns for one district and two months (app.hotspots_csv filter).
+    lud = h[(h["district"] == "Ludhiana") & (h["year"] == 2020) & h["month"].isin([10, 11])]
+    expected = monthly[(monthly["district"] == "Ludhiana") & (monthly["year"] == 2020)
+                       & monthly["month"].isin([10, 11])]["fire_pixel_days"].sum()
+    assert len(lud) == pytest.approx(expected, rel=0.02) and len(lud) > 500
+

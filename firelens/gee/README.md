@@ -13,7 +13,7 @@ Earth Engine steps run in the Code Editor (https://code.earthengine.google.com):
 | 6. Latest month | `python gee/supporting.py latest` | printed; post it in team chat |
 | 7. Demo chart | `python gee/supporting.py chart` | `data/figures/ludhiana_sensors.png/.svg` |
 | 8. Hotspot list | `export_hotspots.js`: 33 tasks + 1 lookup | Drive `firelens_hotspots/fl_hot_<sensor>_<year>.csv`, `fl_hotspot_districts.csv` |
-| 9. Merge + 8 checks | `python gee/merge_hotspots.py` | `data/hotspots.csv.gz` (app's "Download hotspots CSV") |
+| 9. Merge + 9 checks | `python gee/merge_hotspots.py data/raw/hotspots` | `data/hotspots.csv.gz` (app's "Download hotspots CSV") |
 | 10. Hotspots with land cover (fire type) | `export_hotspots_context.js`: one task per year | Drive `FirePulse_India_Data/FirePulse_India_*.csv`; put them in `data/raw/firepulse/` |
 | 11. Fire types + checks | `python science/fire_types.py --input data/raw/firepulse` | `data/district_fire_types.csv`, `data/static_sources.csv`, `science/fire_types.md` |
 
@@ -24,3 +24,4 @@ Notes
 - Months with `n_images = 0` (after the latest image) are kept as zeros. R2 decides how to treat them.
 - Short months in the data: Aqua 2022-04 (14 images), Terra 2022-10 (19), and the current month while it's still in progress.
 - Step 10 is the script exactly as it was run: it samples four rectangles (two of them ours) from 2012, with MCD12Q1 land cover and VIIRS night lights attached to each hotspot. `fire_types.py` keeps the three calendar sensors, FireMask ≥ 8 and 2016 onwards, and reports only districts at least 95 % inside the rectangles (19 of 49). To cover all 49, replace `STUDY_ZONES` with the district collection used in `export_hotspots.js`, re-run, and pass `--full-coverage`.
+- Step 9 checks H0 (all 33 sensor-years present) to H8. Duplicate downloads (`name(1).csv`) are read once. If a whole-year task fails in Earth Engine, export that year in parts named `fl_hot_<sensor>_<year>_part1`, `_part2`, ...: the merge joins them, and ignores parts when a whole-year file is also present. Terra 2017 and 2026 were exported this way (half-years).
