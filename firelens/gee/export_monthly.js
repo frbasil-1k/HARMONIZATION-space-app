@@ -127,7 +127,7 @@ if (MAKE_FULL_TASKS) {
       Export.table.toDrive({
         collection: yearTable(sensor, year, REGIONS),
         description: 'fl_' + sensor + '_' + year,
-        folder: DRIVE_FOLDER,
+        folder: DRIVE_FOLDER + '_' + sensor,   // one Drive folder per sensor (11 files), fits Drive's 30-file zip
         fileFormat: 'CSV',
         selectors: ['ADM1_NAME', 'ADM2_NAME', 'sensor', 'year', 'month', 'fire', 'clear', 'frp', 'n_images']
       });

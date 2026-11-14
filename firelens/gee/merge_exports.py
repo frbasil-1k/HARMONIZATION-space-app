@@ -1,8 +1,9 @@
 """Step 5: merge the Drive exports into data/district_monthly.csv and run the 8 R1 checks.
 
-    python gee/merge_exports.py [folder]     # default: data/raw/firelens_exports
+    python gee/merge_exports.py [folder]     # default: data/raw
 
-Put the downloaded fl_*.csv files (and fl_districts.geojson) in that folder.
+Put the downloaded fl_*.csv files (and fl_districts.geojson) anywhere under that folder;
+subfolders are searched (one per sensor is fine). A file name found twice is read once.
 Exits 1 if any check fails.
 """
 import shutil
@@ -68,16 +69,16 @@ def checks(df):
 
 
 if __name__ == "__main__":
-    src = Path(sys.argv[1]) if len(sys.argv) > 1 else DATA / "raw" / "firelens_exports"
-    files = sorted(src.glob("fl_*.csv"))
+    src = Path(sys.argv[1]) if len(sys.argv) > 1 else DATA / "raw"
+    files = sorted({f.name: f for f in src.rglob("fl_*.csv")}.values())
     if not files:
         sys.exit(f"no fl_*.csv files in {src}")
     df = to_contract(pd.concat(map(pd.read_csv, files), ignore_index=True))
     df.to_csv(DATA / "district_monthly.csv", index=False)
     print(f"{len(files)} files -> {DATA / 'district_monthly.csv'}")
 
-    geo = src / "fl_districts.geojson"
-    if geo.exists():
+    geo = next(src.rglob("fl_districts.geojson"), None)
+    if geo:
         shutil.copy(geo, DATA / "districts.geojson")
         print(f"copied {geo.name} -> data/districts.geojson")
 
