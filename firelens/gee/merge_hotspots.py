@@ -3,7 +3,8 @@
     python gee/merge_hotspots.py [folder]     # default: data/raw
 
 Put the downloaded fl_hot_*.csv files and fl_hotspot_districts.csv anywhere under that
-folder (several Drive zips and "name(1).csv" duplicate downloads are fine). One row per hotspot pixel per day; the app filters it for the "hotspots CSV" download.
+folder (several Drive zips, "name(1).csv" duplicate downloads, and years exported in parts
+as fl_hot_<sensor>_<year>_part1.csv, _part2.csv are all fine). One row per hotspot pixel per day; the app filters it for the "hotspots CSV" download.
 Exits 1 if any check fails.
 """
 import re
@@ -35,20 +36,51 @@ def unique_files(raw: Path, pattern: str) -> dict[str, Path]:
     return seen
 
 
-def read_unique(raw: Path, pattern: str) -> list[pd.DataFrame]:
-    return [pd.read_csv(p) for p in unique_files(raw, pattern).values()]
+EXPORT_NAME = re.compile(r"^fl_hot_(terra|aqua|viirs_snpp)_(\d{4})(?:_part(\d+))?$")
+
+
+def hotspot_files(raw: Path) -> dict[tuple[str, int], list[Path]]:
+    """The files to read for each (sensor, year).
+
+    A sensor-year comes either as one export, fl_hot_<sensor>_<year>, or split into parts,
+    fl_hot_<sensor>_<year>_part1, _part2, ... (used when a whole-year task fails). If both
+    exist, the whole-year file is used and the parts are ignored, so nothing is counted twice.
+    """
+    whole: dict[tuple[str, int], Path] = {}
+    parts: dict[tuple[str, int], list[Path]] = {}
+    for stem, path in unique_files(raw, "fl_hot_*.csv").items():
+        match = EXPORT_NAME.match(stem)
+        if not match:
+            print(f"note: ignoring {path.name} (not an fl_hot_<sensor>_<year> export)")
+            continue
+        key = (match.group(1), int(match.group(2)))
+        if match.group(3):
+            parts.setdefault(key, []).append(path)
+        else:
+            whole[key] = path
+    files = {key: [path] for key, path in whole.items()}
+    for key, paths in parts.items():
+        if key in whole:
+            print(f"note: {key[0]} {key[1]} has a whole-year file; its {len(paths)} part files are ignored")
+        else:
+            files[key] = sorted(paths)
+    return files
+
+
+def read_hotspots(raw: Path) -> list[pd.DataFrame]:
+    return [pd.read_csv(p) for paths in hotspot_files(raw).values() for p in paths]
 
 
 def missing_exports(raw: Path) -> list[str]:
-    """Sensor-year exports (fl_hot_<sensor>_<year>) not found under raw."""
-    have = set(unique_files(raw, "fl_hot_*.csv"))
-    return [f"fl_hot_{s}_{y}" for s in sorted(SENSOR_NAMES) for y in YEARS if f"fl_hot_{s}_{y}" not in have]
+    """Sensor-years with no export (whole or in parts) under raw."""
+    have = set(hotspot_files(raw))
+    return [f"fl_hot_{s}_{y}" for s in sorted(SENSOR_NAMES) for y in YEARS if (s, y) not in have]
 
 
 def build(raw: Path) -> pd.DataFrame:
     """Raw exports -> one tidy table with exact GAUL names."""
-    parts = [p for p in read_unique(raw, "fl_hot_*.csv") if len(p)]
-    lookup = read_unique(raw, "fl_hotspot_districts.csv")
+    parts = [p for p in read_hotspots(raw) if len(p)]
+    lookup = [pd.read_csv(p) for p in unique_files(raw, "fl_hotspot_districts.csv").values()]
     if not parts or not lookup:
         sys.exit(f"no fl_hot_*.csv or fl_hotspot_districts.csv under {raw}")
     df = pd.concat(parts, ignore_index=True)
