@@ -45,9 +45,30 @@ HARMONIZED_COUNT_NOTE = (
     "cells are blank in count view where VIIRS had no clear view."
 )
 HARMONIZED_NOTE = (
-    "Harmonized = Terra and Aqua MODIS scaled to the Suomi-NPP VIIRS anchor with state-level "
-    "ratios fitted on 2016–2022, then averaged with VIIRS over the sensors that saw the "
-    "district clearly that month. Method and blind 2023–2025 validation: science/validation.md."
+    "Harmonized = Terra and Aqua MODIS scaled to the Suomi-NPP VIIRS anchor with one ratio per "
+    "state and calendar month (fitted on 2016–2022), then blended with VIIRS, weighted by how "
+    "well each sensor predicted VIIRS in unseen years. From Oct 2022 the MODIS orbits drift "
+    "(Terra earlier, Aqua later in the day), so from then on the value is VIIRS wherever VIIRS "
+    "saw the district; a ◦ marks a month filled from drifted MODIS (lower confidence). "
+    "Method and validation: science/validation.md."
+)
+DRIFT_NOTE = "Shaded: MODIS orbit drift (from Oct 2022). Scaled MODIS is shown for comparison only."
+RECON_NOTE = (
+    "The check behind harmonization: the calendar rebuilt from scaled MODIS alone (as it would "
+    "be before VIIRS launched in 2012) against what VIIRS actually saw. Agreement before the "
+    "drift is the evidence that the record can be extended back to 2001."
+)
+DRIFT_START = (2022, 10)  # science/harmonize.py DRIFT_START: Terra 2022-10, Aqua 2023-02
+SOURCE_TEXT = {
+    "blend": "VIIRS + MODIS",
+    "viirs": "VIIRS",
+    "modis_fill": "MODIS (VIIRS had no clear view)",
+    "modis_fill_drift": "drifted MODIS, lower confidence (VIIRS had no clear view)",
+}
+MAP_NOTE = (
+    "Each district coloured by the same month against its own median for that month, in the "
+    "selected series and dates. Click a district to open it. Grey: fewer than {n} years to "
+    "compare, or a zero median."
 )
 ANOMALY_NOTE = (
     "Each month's activity minus the median of the same calendar month across the selected "
@@ -60,9 +81,8 @@ RECORDED_NOTE = (
     "and pass over at different times. Breaks in a line are months with no data."
 )
 SCALED_NOTE = (
-    "After harmonization: Terra and Aqua MODIS scaled to the VIIRS anchor, and the black "
-    "line is the harmonized series (the mean of the sensors that saw the district clearly). "
-    "Breaks in a line are months with no data."
+    "After harmonization: Terra and Aqua MODIS scaled to the VIIRS anchor with monthly ratios, "
+    "and the black line is the harmonized series. Breaks in a line are months with no data."
 )
 YEARLY_NOTE = (
     "Mean of the monthly activity in each year, for comparing years. Lighter, hatched bars "
@@ -120,12 +140,14 @@ def harmonized_rows(harmonized: pd.DataFrame, monthly: pd.DataFrame) -> pd.DataF
     detections is the harmonized count: see harmonized_detections.
     """
     images = monthly.groupby(MONTH_KEYS, as_index=False)["n_images"].max()
-    rows = harmonized[MONTH_KEYS + ["act_harmonized", "viirs_act"]]
+    if "source" not in harmonized:  # v1 file: no provenance column
+        harmonized = harmonized.assign(source="blend")
+    rows = harmonized[MONTH_KEYS + ["act_harmonized", "viirs_act", "source"]]
     # Inner join: only months the sensor file covers, so both files describe the same record.
     rows = rows.merge(images, on=MONTH_KEYS, how="inner").merge(anchor_clear(monthly), on=MONTH_KEYS, how="left")
     rows["detections"] = harmonized_detections(rows)
     rows = rows.rename(columns={"act_harmonized": "activity"})
-    return rows[MONTH_KEYS + ["activity", "detections", "n_images"]].assign(sensor=HARMONIZED)
+    return rows[MONTH_KEYS + ["activity", "detections", "n_images", "source"]].assign(sensor=HARMONIZED)
 
 
 def anchor_clear(monthly: pd.DataFrame) -> pd.DataFrame:
@@ -213,26 +235,53 @@ def count_text(count: float, estimated: bool) -> str:
     return f"{count:,.1f} hotspot pixel-days"
 
 
-def calendar_hover(grid: pd.DataFrame, counts: pd.DataFrame, estimated: bool, selected):
-    """Hover text per cell: outside the dates, no data, or activity plus count."""
+def source_grid(series: pd.DataFrame, years: list[int]) -> pd.DataFrame | None:
+    """Year x month table of where each harmonized value came from, or None for a sensor."""
+    if "source" not in series or series["source"].isna().all():
+        return None
+    return series.pivot(index="year", columns="month", values="source").reindex(index=years, columns=MONTHS)
+
+
+def calendar_hover(grid: pd.DataFrame, counts: pd.DataFrame, estimated: bool, selected,
+                   sources: pd.DataFrame | None = None):
+    """Hover text per cell: outside the dates, no data, or activity, count and source."""
     def text(y: int, m: int) -> str:
         if not selected(y, m):
             return OUTSIDE_DATES
         if np.isnan(grid.loc[y, m]):
             return "no data"
-        return f"activity {grid.loc[y, m] * 100:.3f}% · {count_text(counts.loc[y, m], estimated)}"
+        base = f"activity {grid.loc[y, m] * 100:.3f}% · {count_text(counts.loc[y, m], estimated)}"
+        source = sources.loc[y, m] if sources is not None else None
+        return f"{base} · from {SOURCE_TEXT[source]}" if source in SOURCE_TEXT else base
     return text
 
 
+def mark_cells(fig: go.Figure, cells: list[tuple[int, int]], symbol: str, color: str) -> go.Figure:
+    """Overlay a small marker on the given (year, month) cells of a calendar heatmap."""
+    fig.add_trace(go.Scatter(
+        x=[MONTH_NAMES[m - 1] for _, m in cells], y=[str(y) for y, _ in cells], mode="markers",
+        hoverinfo="skip", showlegend=False,
+        marker=dict(symbol=symbol, size=9, color=color, line=dict(color=color, width=1.5)),
+    ))
+    return fig
+
+
 def calendar_heatmap(grid: pd.DataFrame, counts: pd.DataFrame, title: str,
-                     estimated: bool, by_count: bool, selected) -> go.Figure:
-    """Calendar coloured by activity share, or by hotspot pixel-days when by_count."""
+                     estimated: bool, by_count: bool, selected,
+                     sources: pd.DataFrame | None = None) -> go.Figure:
+    """Calendar coloured by hotspot pixel-days, or by activity share when not by_count."""
     if by_count:
         z, bar = counts, dict(title=dict(text="Hotspot<br>pixel-days"))
     else:  # activity as % of clearly seen pixels
         z, bar = grid * 100, dict(title=dict(text="Activity<br>(% of clear<br>pixels)"), ticksuffix="%")
-    return heatmap_figure(z, title, calendar_hover(grid, counts, estimated, selected),
-                          colorscale="Cividis", zmin=0, colorbar=bar)
+    fig = heatmap_figure(z, title, calendar_hover(grid, counts, estimated, selected, sources),
+                         colorscale="Cividis", zmin=0, colorbar=bar)
+    if sources is not None:
+        drift = [(y, m) for y in sources.index for m in MONTHS
+                 if selected(y, m) and sources.loc[y, m] == "modis_fill_drift"]
+        if drift:
+            mark_cells(fig, drift, "circle-open", "#D55E00")
+    return fig
 
 
 # --- Anomaly view ---------------------------------------------------------------
@@ -317,6 +366,37 @@ def lines_figure(traces: list, title: str) -> go.Figure:
         legend=dict(orientation="h", y=-0.15),
     )
     return fig
+
+
+def shade_drift(fig: go.Figure, rows: pd.DataFrame) -> go.Figure:
+    """Grey band over the months after the MODIS orbits left their science limits."""
+    if rows.empty:
+        return fig
+    last = rows.sort_values(["year", "month"]).iloc[-1]
+    if (int(last["year"]), int(last["month"])) < DRIFT_START:
+        return fig
+    first = max(pd.Timestamp(*DRIFT_START, 1), pd.to_datetime(rows[["year", "month"]].assign(day=1)).min())
+    fig.add_vrect(x0=first, x1=pd.Timestamp(int(last["year"]), int(last["month"]), 1),
+                  fillcolor="#8a8a8a", opacity=0.12, line_width=0, layer="below",
+                  annotation_text="MODIS orbit drift", annotation_position="top left")
+    return fig
+
+
+def recon_traces(scaled: pd.DataFrame) -> list:
+    return [("Suomi-NPP VIIRS (observed)", scaled, "viirs_act", SENSOR_LINES["viirs_snpp"]),
+            ("MODIS-only reconstruction", scaled, "modis_recon", dict(color="#CC79A7", width=2, dash="dash"))]
+
+
+def recon_agreement(scaled: pd.DataFrame) -> str | None:
+    """r and total-burning ratio of the reconstruction vs VIIRS, before the drift."""
+    ym = scaled["year"] * 12 + scaled["month"]
+    pre = scaled[ym < DRIFT_START[0] * 12 + DRIFT_START[1]][["modis_recon", "viirs_act"]].dropna()
+    if len(pre) < 12 or pre["viirs_act"].std() == 0 or pre["modis_recon"].std() == 0:
+        return None
+    r = np.corrcoef(pre["modis_recon"], pre["viirs_act"])[0, 1]
+    total = pre["modis_recon"].sum() / pre["viirs_act"].sum() if pre["viirs_act"].sum() > 0 else np.nan
+    return (f"Before the drift, in these dates: r = {r:.2f}, and the reconstruction totals "
+            f"{total:.2f}× the burning VIIRS recorded ({len(pre)} months).")
 
 
 # --- Yearly view ----------------------------------------------------------------
@@ -423,12 +503,13 @@ def partial_note(row: pd.Series) -> str | None:
     return f"Partial month: {most}{images} of {days} daily images"
 
 
-def render_metrics(series: pd.DataFrame, grid: pd.DataFrame) -> None:
+def render_metrics(series: pd.DataFrame, grid: pd.DataFrame) -> pd.Series | None:
+    """Headline cards; returns the month they describe (None if nothing observed)."""
     latest = latest_observed(series)
     cols = st.columns(3)
     if latest is None:
         cols[0].info("No observed months for this selection.")
-        return
+        return None
     month, value = int(latest["month"]), latest["activity"]
     history = month_history(series, month)
     ratio, pct = anomaly_ratio(value, history), percentile_rank(value, history)
@@ -444,6 +525,7 @@ def render_metrics(series: pd.DataFrame, grid: pd.DataFrame) -> None:
     skipped = skipped_note(series, latest)
     if skipped:
         st.caption(skipped)
+    return latest
 
 
 # --- Download -------------------------------------------------------------------
@@ -491,6 +573,12 @@ def render_downloads(df: pd.DataFrame, harmonized: pd.DataFrame | None, state: s
                  "pixel-centre latitude/longitude, FRP (MW) and confidence. One row per 1 km pixel "
                  "per day per sensor, as recorded (not harmonized); don't add sensors together.",
         )
+    else:
+        cols[2].download_button(
+            "Download hotspots CSV", data=b"", file_name="hotspots.csv", disabled=True,
+            help="The hotspot list (data/hotspots.csv.gz) has not been generated in this build. "
+                 "It comes from gee/export_hotspots.js + gee/merge_hotspots.py.",
+        )
     if harmonized is not None:
         cols[0].download_button(
             "Download harmonized CSV", data=harmonized_csv(harmonized),
@@ -526,10 +614,11 @@ def district_harmonized(harmonized: pd.DataFrame | None, state: str, district: s
 def render_calendar(series: pd.DataFrame, grid: pd.DataFrame, years: list[int],
                     title: str, estimated: bool, selected) -> None:
     """Calendar tab: colour by activity or by hotspot count."""
-    by_count = st.radio("Colour by", [BY_ACTIVITY, BY_COUNT], horizontal=True,
+    by_count = st.radio("Colour by", [BY_COUNT, BY_ACTIVITY], horizontal=True,
                         key="calendar_value") == BY_COUNT
     counts = calendar_grid(series, years, "detections")
-    show_chart(calendar_heatmap(grid, counts, title, estimated, by_count, selected),
+    sources = source_grid(series, years) if estimated else None
+    show_chart(calendar_heatmap(grid, counts, title, estimated, by_count, selected, sources),
                f"{title} calendar")
     st.caption(ACTIVITY_NOTE + (" " + HARMONIZED_NOTE if estimated else ""))
     st.caption(HARMONIZED_COUNT_NOTE if estimated else COUNT_NOTE)
@@ -538,10 +627,20 @@ def render_calendar(series: pd.DataFrame, grid: pd.DataFrame, years: list[int],
 def render_comparison(district_rows: pd.DataFrame, scaled: pd.DataFrame | None, place: str) -> None:
     """Sensors side by side: after harmonization (when available) or as recorded."""
     views = ["After harmonization", "As recorded"] if scaled is not None else ["As recorded"]
+    if scaled is not None and "modis_recon" in scaled:
+        views.append("MODIS-only check")
     view = st.radio("Show", views, horizontal=True, key="comparison_view")
     if view == "After harmonization":
-        show_chart(lines_figure(scaled_traces(scaled), place), f"{place} sensors harmonized")
-        st.caption(SCALED_NOTE)
+        fig = shade_drift(lines_figure(scaled_traces(scaled), place), scaled)
+        show_chart(fig, f"{place} sensors harmonized")
+        st.caption(SCALED_NOTE + " " + DRIFT_NOTE)
+    elif view == "MODIS-only check":
+        fig = shade_drift(lines_figure(recon_traces(scaled), place), scaled)
+        show_chart(fig, f"{place} MODIS-only check")
+        agreement = recon_agreement(scaled)
+        if agreement:
+            st.markdown(f"**{agreement}**")
+        st.caption(RECON_NOTE)
     else:
         show_chart(lines_figure(recorded_traces(district_rows), place), f"{place} sensors recorded")
         st.caption(RECORDED_NOTE)
@@ -625,24 +724,91 @@ def render_search(geo: dict, df: pd.DataFrame) -> None:
             getattr(st, kind)(text)
 
 
-def district_map(feature: dict) -> folium.Map:
+# Month-vs-median classes for the overview map (PuOr, purple = below, orange = above).
+MAP_BINS = [(0.25, "< 0.25×", "#542788"), (0.5, "0.25–0.5×", "#8073ac"), (0.8, "0.5–0.8×", "#b2abd2"),
+            (1.25, "0.8–1.25×", "#f7f7f7"), (2.0, "1.25–2×", "#fdb863"), (4.0, "2–4×", "#e08214"),
+            (np.inf, "> 4×", "#b35806")]
+MAP_NO_DATA = "#cccccc"
+
+
+def district_ratios(df: pd.DataFrame, sensor: str, start: tuple[int, int], end: tuple[int, int],
+                    target: tuple[int, int]) -> dict[tuple[str, str], float]:
+    """Every district's target month ÷ its median of that calendar month, in the dates."""
+    rows = df[(df["sensor"] == sensor) & in_dates(df, start, end) & (df["month"] == target[1])]
+    observed = rows.dropna(subset=["activity"])
+    history = observed.groupby(["state", "district"])["activity"].agg(["median", "count"])
+    now = observed[observed["year"] == target[0]].set_index(["state", "district"])["activity"]
+    ratio = (now / history["median"]).where((history["count"] >= MIN_YEARS) & (history["median"] > 0))
+    return {key: float(v) for key, v in ratio.dropna().items()}
+
+
+def ratio_colour(ratio: float | None) -> str:
+    if ratio is None or not np.isfinite(ratio):
+        return MAP_NO_DATA
+    return next(colour for upper, _, colour in MAP_BINS if ratio < upper)
+
+
+def overview_map(geo: dict, ratios: dict, selected: tuple[str, str], month_name: str) -> folium.Map:
+    """All districts coloured by month vs median; the selected one outlined in black."""
+    features = []
+    for feature in geo["features"]:
+        key = district_key(feature)
+        ratio = ratios.get(key)
+        value = "not enough history" if ratio is None else f"{ratio:.2f}× its {month_name} median"
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "MultiPolygon", "coordinates": polygons(feature["geometry"])},
+            "properties": {"state": key[0], "district": key[1], "label": f"{key[1]}, {key[0]}: {value}",
+                           "fill": ratio_colour(ratio), "selected": key == selected},
+        })
     m = folium.Map(tiles="OpenStreetMap")
     layer = folium.GeoJson(
-        feature,
-        style_function=lambda _: {"color": "#0072B2", "weight": 2, "fillOpacity": 0.1},
+        {"type": "FeatureCollection", "features": features},
+        style_function=lambda f: {
+            "fillColor": f["properties"]["fill"], "fillOpacity": 0.8,
+            "color": "#111111" if f["properties"]["selected"] else "#666666",
+            "weight": 3 if f["properties"]["selected"] else 0.6,
+        },
+        highlight_function=lambda _: {"weight": 2, "color": "#0072B2"},
+        tooltip=folium.GeoJsonTooltip(fields=["label"], labels=False),
     ).add_to(m)
     m.fit_bounds(layer.get_bounds())
     return m
 
 
-def render_map(geo_path: Path, state: str, district: str) -> None:
-    feature = district_feature(load_geojson(geo_path), state, district)
-    if feature is None:
+def map_legend() -> str:
+    swatch = ('<span style="display:inline-block;width:14px;height:14px;background:{c};'
+              'border:1px solid #888;margin:0 4px 0 10px;vertical-align:middle"></span>{t}')
+    items = [swatch.format(c=c, t=t) for _, t, c in MAP_BINS] + [swatch.format(c=MAP_NO_DATA, t="no comparison")]
+    return '<div style="font-size:0.85rem">' + "".join(items) + "</div>"
+
+
+def render_map(geo_path: Path, df: pd.DataFrame, sensor: str, state: str, district: str,
+               start: tuple[int, int], end: tuple[int, int], latest: pd.Series | None) -> None:
+    """Overview of all districts for the headline month; clicking a district opens it."""
+    geo = load_geojson(geo_path)
+    if district_feature(geo, state, district) is None:
         st.info(f"No boundary found for {district}, {state}.")
+    if latest is None:
+        target, ratios, month_name = None, {}, ""
+        st.markdown("**All districts** · no observed month to compare in these dates")
     else:
-        st_folium(district_map(feature), height=420, use_container_width=True,
-                  returned_objects=[], key=f"map-{state}-{district}")
-    st.caption(BOUNDARY_DISCLAIMER)
+        target = (int(latest["year"]), int(latest["month"]))
+        month_name = MONTH_NAMES[target[1] - 1]
+        ratios = district_ratios(df, sensor, start, end, target)
+        st.markdown(f"**All districts · {month_label(*target)} vs each district's {month_name} median "
+                    f"· {SERIES_LABELS[sensor]}**")
+    out = st_folium(overview_map(geo, ratios, (state.strip(), district.strip()), month_name),
+                    height=480, use_container_width=True, returned_objects=["last_active_drawing"],
+                    key=f"map-{state}-{district}-{sensor}-{target}")
+    clicked = (out or {}).get("last_active_drawing") or {}
+    props = clicked.get("properties") or {}
+    pick = (props.get("state"), props.get("district"))
+    if all(pick) and pick != (state.strip(), district.strip()):
+        st.session_state["pending_pick"] = pick
+        st.rerun()
+    st.markdown(map_legend(), unsafe_allow_html=True)
+    st.caption(MAP_NOTE.format(n=MIN_YEARS) + " " + BOUNDARY_DISCLAIMER)
 
 
 def main() -> None:
@@ -662,6 +828,11 @@ def main() -> None:
     else:
         st.error(f"No data found. Expected {DATA_PATH.name} (or run app/make_mock.py).")
         st.stop()
+
+    # A district clicked on the map last run: apply it before the selectors are drawn.
+    pick = st.session_state.pop("pending_pick", None)
+    if pick:
+        st.session_state["state"], st.session_state["district"] = pick
 
     with st.sidebar:
         st.header("Location")
@@ -694,7 +865,7 @@ def main() -> None:
 
     scaled = district_harmonized(harmonized, state, district, start, end)
 
-    render_metrics(series, grid)
+    latest = render_metrics(series, grid)
     calendar_tab, yearly_tab, anomaly_tab, sensors_tab = st.tabs(
         ["Calendar", "Yearly", "Anomaly", "Sensor comparison"])
     with calendar_tab:
@@ -708,8 +879,8 @@ def main() -> None:
     with sensors_tab:
         render_comparison(district_rows, scaled, place)
     render_downloads(df[dated], scaled, state, district, file_span, start, end)
-    st.subheader(f"{district}, {state}")
-    render_map(geo_path, state, district)
+    st.subheader("Map")
+    render_map(geo_path, df, sensor, state, district, start, end, latest)
 
 
 main()

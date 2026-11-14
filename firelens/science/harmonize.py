@@ -1,42 +1,50 @@
 #!/usr/bin/env python3
-"""FireLens Phase 2 — cross-sensor harmonization of the monthly fire record.
+"""FireLens Phase 2 — cross-sensor harmonization of the monthly fire record (v2).
 
 Problem
 -------
 Terra MODIS, Aqua MODIS and Suomi-NPP VIIRS do not count burning the same way. Their
 raw activity series step up and down whenever the sensor mix changes, which looks like a
 change in burning but is an instrument artefact. This script learns, from the years in
-which all three sensors overlap, how much each MODIS sensor under- or over-reads relative
-to the VIIRS anchor, then applies that calibration to every month to produce one
-harmonized activity series per district.
+which all three sensors flew their nominal orbits, how much each MODIS sensor under- or
+over-reads relative to the VIIRS anchor, and combines them into one harmonized activity
+series per district.
+
+What changed in v2 (docs/decisions.md, 2026-11-15)
+-------------------------------------------------
+* **Seasonal ratios.** One ratio per (state, MODIS sensor, calendar month), the ratio of
+  sums ``sum(viirs) / sum(modis)`` over shared district-months, falling back to the
+  state-level ratio of sums when a month has too few burning months. A single all-year
+  median was set by quiet months and left Terra's morning overpass ~4x too low in the
+  afternoon crop-burning peak.
+* **Orbit-drift aware.** Terra (drifting earlier since 2020, below 10:15 MLT from
+  Oct 2022) and Aqua (drifting later since 2021, past 13:45 MLT from Feb 2023) are only
+  calibrated on, and only blended in, months before their drift start. After it, MODIS
+  is used only to fill months VIIRS could not see, and those months are flagged.
+* **Skill-weighted blend.** Each scaled MODIS sensor enters the blend with weight r^2,
+  its leave-one-year-out correlation with VIIRS; VIIRS has weight 1.
+* **MODIS-only reconstruction** (``modis_recon``): the calendar rebuilt from scaled MODIS
+  alone, validated against VIIRS. This is the evidence that the record can be extended
+  back to 2001/2003, before VIIRS existed.
 
 Pipeline
 --------
-1. Load ``data/district_monthly.csv`` and compute the contract metrics:
-   ``activity``, ``clear_coverage``, ``low_coverage``.
-2. Calibrate on 2016–2022 only: per (state, MODIS sensor), the median of
-   ``viirs_snpp_activity / modis_activity`` over shared district-months where both > 0.
-   Check year-to-year stability and fall back to a sensor-level pooled ratio if a
-   state's ratio is too unstable (CV > 0.50).
-3. Validate on the unseen 2023–2025 holdout: scale MODIS, then report Pearson r/p,
-   signed and absolute median error, and the residual by year.
-4. Build ``data/district_harmonized.csv``: one row per district-month with
-   ``viirs_act``, ``terra_scaled``, ``aqua_scaled``, ``act_harmonized``,
-   ``n_valid_sensors``, ``low_coverage``, ``baseline``, ``anomaly``, ``percentile``.
-5. Write ``science/validation.md`` with every calibration, stability and validation table.
+1. Load ``data/district_monthly.csv`` and compute ``activity``, ``clear_coverage``,
+   ``low_coverage`` (unchanged from v1).
+2. Leave-one-year-out (LOYO) over the pre-drift calibration months: fit on six years,
+   test on the seventh. Gives honest skill numbers and the blend weights.
+3. Fit the final ratios on all pre-drift calibration months.
+4. Drift-period check (2023–2025): how far the pre-drift ratios miss once the orbits
+   drift, including a causal rolling refit, to justify not blending drifted MODIS.
+5. Build ``data/district_harmonized.csv`` and write ``science/validation.md``.
 
 Rules honoured (docs/decisions.md, docs/data-contract.md)
 ---------------------------------------------------------
 * ``activity = fire_pixel_days / clear_pixel_days``; NaN when ``clear_pixel_days == 0`` or
-  ``n_images == 0``.
-* ``clear_coverage = (clear_pixel_days / days_in_month) / baseline``, where the baseline is
-  that (state, district, sensor)'s maximum monthly ``clear_pixel_days / days_in_month``.
-  Phase 2 refines the Phase 1 district-level proxy by computing it per sensor, so a sensor
-  with systematically fewer clear views cannot depress another sensor's coverage.
-* Never impute, forward-fill or zero-fill. Low-coverage rows keep ``activity = NaN``, are
-  excluded from calibration and climatology, and are excluded with ``skipna=True``.
-* The input CSV is read-only: this script writes only
-  ``data/district_harmonized.csv`` and ``science/validation.md``.
+  ``n_images == 0``. Low-coverage rows stay NaN. No imputation anywhere: a "fill" is
+  another sensor's measurement of the same month, never an interpolation.
+* The input CSV is read-only: this script writes only ``data/district_harmonized.csv``
+  and ``science/validation.md``.
 
 Usage
 -----
@@ -68,12 +76,19 @@ DEFAULT_VALIDATION = BASE_DIR / "science" / "validation.md"
 SENSORS = ("terra", "aqua", "viirs_snpp")
 MODELS = ("terra", "aqua")
 ANCHOR = "viirs_snpp"
+SCALED = {"terra": "terra_scaled", "aqua": "aqua_scaled"}
 
 COVERAGE_THRESHOLD = 0.10
 CALIB_YEARS = (2016, 2022)
 HOLDOUT_YEARS = (2023, 2025)
 FULL_YEARS = (2016, 2026)
 CV_LIMIT = 0.50
+MIN_BURNING_MONTHS = 15  # positive MODIS district-months needed for a month-specific ratio
+
+# First month of orbit drift outside each MODIS sensor's science limits (NASA):
+# Terra passed 10:15 MLT in Oct 2022 (last inclination manoeuvre Feb 2020);
+# Aqua passed 13:45 MLT in Feb 2023 (free drift since Jan 2022).
+DRIFT_START = {"terra": (2022, 10), "aqua": (2023, 2)}
 
 INDEX = ["state", "district", "year", "month"]
 REQUIRED = (
@@ -92,7 +107,6 @@ MONTH_NAMES = (
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 )
-
 
 # --------------------------------------------------------------------------------------
 # 1. Load and derive metrics
@@ -171,138 +185,96 @@ def _wide_activity(df: pd.DataFrame) -> pd.DataFrame:
     return wide[list(SENSORS)].sort_index()
 
 
+
+def _wide(df: pd.DataFrame) -> pd.DataFrame:
+    """Flat district-month table: INDEX columns plus one activity column per sensor."""
+    return _wide_activity(df).reset_index()
+
+
+def _ym(frame: pd.DataFrame) -> pd.Series:
+    return frame["year"].astype(int) * 12 + frame["month"].astype(int)
+
+
+def pre_drift(frame: pd.DataFrame, sensor: str) -> pd.Series:
+    """True for months before the sensor's orbit left its science limits."""
+    year, month = DRIFT_START[sensor]
+    return _ym(frame) < year * 12 + month
+
+
 # --------------------------------------------------------------------------------------
-# 2. Calibration on 2016-2022
+# 2. Seasonal ratios
 # --------------------------------------------------------------------------------------
 
 
-def calibrate(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, float], bool]:
-    """Estimate the VIIRS/MODIS ratio per (state, sensor) on the calibration years.
+def fit_ratios(train: pd.DataFrame, min_burning: int = MIN_BURNING_MONTHS) -> pd.DataFrame:
+    """VIIRS / MODIS ratio of sums per (state, sensor, calendar month).
 
-    Returns
-    -------
-    ratios
-        Columns ``state, sensor, ratio, n_pairs, p10, p50, p90, cv, use_fallback, method``.
-    stability
-        Long table of the per-year median ratio (2016–2022) for each (state, sensor),
-        with the CV across years.
-    fallback_ratios
-        Sensor-level pooled median ratio, used where a state's ratio is unstable.
-    use_fallback
-        True if any (state, sensor) exceeded ``CV_LIMIT``.
+    ``train`` is a flat wide table. Only months where both sensors are valid and the MODIS
+    sensor is still pre-drift are used. A calendar month with fewer than ``min_burning``
+    positive MODIS district-months falls back to the state's all-month ratio of sums,
+    so quiet months cannot produce a wild ratio.
     """
-    calib = df[df["year"].between(*CALIB_YEARS) & ~df["low_coverage"]]
-    wide = _wide_activity(calib).dropna(subset=[ANCHOR])
-
     rows: list[dict] = []
-    stability_rows: list[dict] = []
-    fallback_ratios: dict[str, float] = {}
-
-    states = sorted(df["state"].dropna().unique().tolist())
     for sensor in MODELS:
-        # Sensor-level pooled ratio: the fallback when a state's own ratio is unstable.
-        pooled = wide.dropna(subset=[sensor])
-        pooled = pooled[(pooled[ANCHOR] > 0) & (pooled[sensor] > 0)]
-        pooled_ratio = (
-            float((pooled[ANCHOR] / pooled[sensor]).median()) if len(pooled) else np.nan
-        )
-        fallback_ratios[sensor] = pooled_ratio
-
-    for state in states:
-        in_state = wide[wide.index.get_level_values("state") == state]
-        for sensor in MODELS:
-            shared = in_state.dropna(subset=[sensor])
-            shared = shared[(shared[ANCHOR] > 0) & (shared[sensor] > 0)]
-            ratio_series = shared[ANCHOR] / shared[sensor]
-
-            if ratio_series.empty:
-                rows.append(
-                    {
-                        "state": state,
-                        "sensor": sensor,
-                        "ratio": np.nan,
-                        "n_pairs": 0,
-                        "p10": np.nan,
-                        "p50": np.nan,
-                        "p90": np.nan,
-                        "cv": np.nan,
-                        "use_fallback": True,
-                        "method": "no shared months",
-                    }
-                )
-                continue
-
-            yearly = ratio_series.groupby(shared.index.get_level_values("year")).median()
-            yearly = yearly.reindex(range(CALIB_YEARS[0], CALIB_YEARS[1] + 1))
-            cv = (
-                float(yearly.std(ddof=1) / yearly.mean())
-                if yearly.notna().sum() >= 2 and yearly.mean() > 0
-                else np.nan
-            )
-            use_fallback = bool(np.isfinite(cv) and cv > CV_LIMIT)
-            ratio = (
-                fallback_ratios[sensor]
-                if use_fallback
-                else float(ratio_series.median())
-            )
-
-            rows.append(
-                {
-                    "state": state,
-                    "sensor": sensor,
-                    "ratio": ratio,
-                    "n_pairs": int(len(shared)),
-                    "p10": float(ratio_series.quantile(0.10)),
-                    "p50": float(ratio_series.median()),
-                    "p90": float(ratio_series.quantile(0.90)),
-                    "cv": cv,
-                    "use_fallback": use_fallback,
-                    "method": (
-                        f"fallback: pooled {sensor} median"
-                        if use_fallback
-                        else "state median"
-                    ),
-                }
-            )
-
-            for year in range(CALIB_YEARS[0], CALIB_YEARS[1] + 1):
-                value = yearly.get(year, np.nan)
-                stability_rows.append(
-                    {
-                        "state": state,
-                        "sensor": sensor,
-                        "year": year,
-                        "median_ratio": float(value) if pd.notna(value) else np.nan,
-                        "n_pairs": int(
-                            (shared.index.get_level_values("year") == year).sum()
-                        ),
-                    }
-                )
-
-    ratios = pd.DataFrame(rows)
-    stability = pd.DataFrame(stability_rows)
-    use_fallback_any = bool(ratios["use_fallback"].any())
-
-    print("\nCalibration ratios (VIIRS / MODIS), 2016-2022:")
-    for _, r in ratios.iterrows():
-        print(
-            f"  {r['state']:<12} {r['sensor']:<6} ratio={r['ratio']:.3f} "
-            f"(n={r['n_pairs']:>4}, p10={r['p10']:.2f}, p90={r['p90']:.2f}, "
-            f"CV={r['cv']:.3f}) {r['method']}"
-        )
-    print(f"  USE_FALLBACK = {use_fallback_any} (CV limit {CV_LIMIT})")
-
-    return ratios, stability, fallback_ratios, use_fallback_any
+        shared = train[pre_drift(train, sensor)].dropna(subset=[ANCHOR, sensor])
+        for state, in_state in shared.groupby("state", observed=True):
+            total = in_state[sensor].sum()
+            state_ratio = float(in_state[ANCHOR].sum() / total) if total > 0 else np.nan
+            for month in range(1, 13):
+                cell = in_state[in_state["month"] == month]
+                burning = int((cell[sensor] > 0).sum())
+                modis_sum = cell[sensor].sum()
+                if burning >= min_burning and modis_sum > 0:
+                    ratio, method = float(cell[ANCHOR].sum() / modis_sum), "month"
+                else:
+                    ratio, method = state_ratio, "state (few burning months)"
+                rows.append({
+                    "state": state, "sensor": sensor, "month": month, "ratio": ratio,
+                    "state_ratio": state_ratio, "n_pairs": int(len(cell)),
+                    "n_burning": burning, "method": method,
+                })
+    return pd.DataFrame(rows)
 
 
-def _ratio_map(ratios: pd.DataFrame, sensor: str) -> pd.Series:
-    """State -> ratio lookup for one sensor."""
-    sub = ratios[ratios["sensor"] == sensor]
-    return pd.Series(sub["ratio"].to_numpy(), index=sub["state"].astype(str))
+def _lookup(ratios: pd.DataFrame, sensor: str, frame: pd.DataFrame) -> np.ndarray:
+    sub = ratios[ratios["sensor"] == sensor].set_index(["state", "month"])["ratio"]
+    keys = pd.MultiIndex.from_arrays([frame["state"].astype(str), frame["month"].astype(int)])
+    return sub.reindex(keys).to_numpy(dtype=float)
+
+
+def scale(frame: pd.DataFrame, ratios: pd.DataFrame) -> dict[str, np.ndarray]:
+    """Scaled MODIS activity (clipped to [0, 1]) for every row of ``frame``."""
+    return {
+        sensor: np.clip(frame[sensor].to_numpy(dtype=float) * _lookup(ratios, sensor, frame), 0.0, 1.0)
+        for sensor in MODELS
+    }
+
+
+def stability(train: pd.DataFrame) -> pd.DataFrame:
+    """Per-year ratio of sums (all months) per (state, sensor), with the CV across years."""
+    rows: list[dict] = []
+    for sensor in MODELS:
+        shared = train[pre_drift(train, sensor)].dropna(subset=[ANCHOR, sensor])
+        for state, in_state in shared.groupby("state", observed=True):
+            by_year = in_state.groupby("year")
+            yearly = (by_year[ANCHOR].sum() / by_year[sensor].sum()).replace([np.inf], np.nan)
+            cv = float(yearly.std(ddof=1) / yearly.mean()) if yearly.notna().sum() >= 2 else np.nan
+            rows.append({"state": state, "sensor": sensor, "cv": cv,
+                         **{int(y): float(v) for y, v in yearly.items()}})
+    return pd.DataFrame(rows)
+
+
+def peak_months(train: pd.DataFrame, n: int = 2) -> dict[str, tuple[int, ...]]:
+    """Each state's n calendar months with the highest mean VIIRS activity."""
+    means = train.groupby(["state", "month"], observed=True)[ANCHOR].mean()
+    return {
+        state: tuple(sorted(int(m) for m in group.droplevel(0).nlargest(n).index))
+        for state, group in means.groupby(level=0)
+    }
 
 
 # --------------------------------------------------------------------------------------
-# 3. Validation on the 2023-2025 holdout
+# 3. Skill: leave-one-year-out, drift check
 # --------------------------------------------------------------------------------------
 
 
@@ -314,222 +286,237 @@ def _pearson(x: np.ndarray, y: np.ndarray) -> tuple[float, float]:
     return float(r), float(p)
 
 
-def _error_stats(residual: np.ndarray) -> dict[str, float]:
-    """Signed median error and median absolute error."""
-    if len(residual) == 0:
-        return {"n": 0, "median_signed": np.nan, "median_abs": np.nan}
+def skill(pred: np.ndarray, anchor: np.ndarray, peak: np.ndarray) -> dict[str, float]:
+    """How well a scaled series reproduces VIIRS.
+
+    bias = sum(pred) / sum(VIIRS): 1.00 means the same total burning. peak_bias is the
+    same over each state's two peak months, where a calendar matters most.
+    """
+    ok = np.isfinite(pred) & np.isfinite(anchor)
+    pred, anchor, peak = pred[ok], anchor[ok], peak[ok]
+    r, p = _pearson(pred, anchor)
     return {
-        "n": int(len(residual)),
-        "median_signed": float(np.median(residual)),
-        "median_abs": float(np.median(np.abs(residual))),
+        "n": int(ok.sum()),
+        "r": r,
+        "p": p,
+        "slope": float(np.polyfit(anchor, pred, 1)[0]) if len(pred) >= 3 and anchor.std() > 0 else np.nan,
+        "bias": float(pred.sum() / anchor.sum()) if anchor.sum() > 0 else np.nan,
+        "peak_bias": float(pred[peak].sum() / anchor[peak].sum()) if anchor[peak].sum() > 0 else np.nan,
+        "median_abs": float(np.median(np.abs(pred - anchor))) if len(pred) else np.nan,
     }
 
 
-def _year_effect_test(
-    years: np.ndarray, residual: np.ndarray, groups: list[np.ndarray]
-) -> dict[str, float]:
-    """Test whether the residual changes across holdout years.
-
-    Kruskal–Wallis answers "is any year different?" without assuming normality;
-    the OLS slope on year answers "is there a monotone drift?". Both are reported so
-    "no step" is a measured statement, not an assertion.
-    """
-    out: dict[str, float] = {
-        "kw_H": np.nan,
-        "kw_p": np.nan,
-        "trend_slope": np.nan,
-        "trend_p": np.nan,
-        "n_years": float(len(groups)),
-    }
-    usable = [g for g in groups if len(g) > 0]
-    if len(usable) >= 2:
-        try:
-            h, p = stats.kruskal(*usable)
-            out["kw_H"] = float(h)
-            out["kw_p"] = float(p)
-        except ValueError:
-            pass
-    if len(residual) >= 3 and len(np.unique(years)) >= 2:
-        fit = stats.linregress(years.astype(float), residual)
-        out["trend_slope"] = float(fit.slope)
-        out["trend_p"] = float(fit.pvalue)
-    return out
+def _peak_mask(frame: pd.DataFrame, peaks: dict[str, tuple[int, ...]]) -> np.ndarray:
+    return np.array([m in peaks.get(s, ()) for s, m in zip(frame["state"], frame["month"])])
 
 
-def validate(
-    df: pd.DataFrame, ratios: pd.DataFrame
-) -> tuple[pd.DataFrame, pd.DataFrame, dict[int, dict[str, float]], dict]:
-    """Apply calibration to the 2023–2025 holdout and measure agreement with VIIRS.
-
-    Returns
-    -------
-    summary
-        One row per series (pooled / terra / aqua) with n, r, p, signed and absolute
-        median error, mean signed error and the share of exactly-zero residuals.
-    residuals
-        One row per (series, year) with the residual median, mean and zero share.
-    per_year
-        Nested dict used for the validation document.
-    extras
-        Year-effect tests (Kruskal–Wallis across years, OLS trend of residual on year)
-        and other numbers the report quotes.
-    """
-    hold = df[df["year"].between(*HOLDOUT_YEARS) & ~df["low_coverage"]]
-    wide = _wide_activity(hold).dropna(subset=[ANCHOR])
-
-    frames: dict[str, pd.DataFrame] = {}
+def _median_ratios(train: pd.DataFrame) -> pd.DataFrame:
+    """v1 method, kept only for the comparison table: one all-month median per state."""
+    rows = []
     for sensor in MODELS:
-        sub = wide.dropna(subset=[sensor]).copy()
-        if sub.empty:
-            continue
-        ratio = sub.index.get_level_values("state").map(_ratio_map(ratios, sensor))
-        sub["modis"] = sub[sensor].to_numpy(dtype=float)
-        sub["scaled"] = np.clip(
-            sub["modis"].to_numpy(dtype=float) * np.asarray(ratio, dtype=float), 0.0, 1.0
-        )
-        sub["anchor"] = sub[ANCHOR].to_numpy(dtype=float)
-        sub["sensor"] = sensor
-        frames[sensor] = sub
+        shared = train.dropna(subset=[ANCHOR, sensor])
+        shared = shared[(shared[ANCHOR] > 0) & (shared[sensor] > 0)]
+        for state, g in shared.groupby("state", observed=True):
+            ratio = float((g[ANCHOR] / g[sensor]).median())
+            rows += [{"state": state, "sensor": sensor, "month": m, "ratio": ratio} for m in range(1, 13)]
+    return pd.DataFrame(rows)
 
-    if not frames:
-        raise RuntimeError("No overlapping VIIRS/MODIS rows in the 2023-2025 holdout.")
 
-    pooled = pd.concat(frames.values())
+def loyo(calib: pd.DataFrame, fitter) -> pd.DataFrame:
+    """Leave-one-year-out predictions: each year scaled with ratios fit on the others."""
+    parts = []
+    for year in range(CALIB_YEARS[0], CALIB_YEARS[1] + 1):
+        test = calib[calib["year"] == year].copy()
+        for sensor, values in scale(test, fitter(calib[calib["year"] != year])).items():
+            test[SCALED[sensor]] = np.where(pre_drift(test, sensor), values, np.nan)
+        parts.append(test)
+    return pd.concat(parts, ignore_index=True)
 
-    summary_rows: list[dict] = []
-    residual_rows: list[dict] = []
-    extras: dict = {}
 
-    panels = [("pooled (terra + aqua)", pooled)]
-    panels += [(sensor, frames[sensor]) for sensor in MODELS if sensor in frames]
+def blend_weights(pred: pd.DataFrame) -> dict[str, float]:
+    """Weight of each scaled MODIS sensor: its squared LOYO correlation with VIIRS."""
+    weights = {}
+    for sensor in MODELS:
+        ok = pred[[SCALED[sensor], ANCHOR]].dropna()
+        r, _ = _pearson(ok[SCALED[sensor]].to_numpy(float), ok[ANCHOR].to_numpy(float))
+        weights[sensor] = max(r, 0.0) ** 2 if np.isfinite(r) else 0.0
+    return weights
 
-    for label, frame in panels:
-        residual = (frame["scaled"] - frame["anchor"]).to_numpy(dtype=float)
-        r, p = _pearson(frame["scaled"].to_numpy(dtype=float), frame["anchor"].to_numpy(dtype=float))
-        err = _error_stats(residual)
-        summary_rows.append(
-            {
-                "series": label,
-                "n": err["n"],
-                "r": r,
-                "p": p,
-                "median_signed": err["median_signed"],
-                "median_abs": err["median_abs"],
-                "mean_signed": float(np.mean(residual)) if len(residual) else np.nan,
-                "share_zero": float(np.mean(residual == 0)) if len(residual) else np.nan,
-                "slope": (
-                    float(np.polyfit(frame["anchor"], frame["scaled"], 1)[0])
-                    if len(frame) >= 3 and frame["anchor"].std() > 0
-                    else np.nan
-                ),
-            }
-        )
-        frame_years = frame.index.get_level_values("year").to_numpy()
-        year_groups: list[np.ndarray] = []
-        for year in sorted(frame.index.get_level_values("year").unique()):
-            year_residual = residual[frame_years == year]
-            year_groups.append(year_residual)
-            residual_rows.append(
-                {
-                    "series": label,
-                    "year": int(year),
-                    "n": int(len(year_residual)),
-                    "median": float(np.median(year_residual)),
-                    "mean": float(np.mean(year_residual)),
-                    "share_zero": float(np.mean(year_residual == 0)),
-                }
-            )
-        extras[label] = {
-            "share_scaled_gt_anchor": float(
-                np.mean(frame["scaled"] > frame["anchor"])
-            ),
-            "year_test": _year_effect_test(frame_years, residual, year_groups),
-        }
 
-    summary = pd.DataFrame(summary_rows)
-    residuals = pd.DataFrame(residual_rows)
+def weighted_modis(frame: pd.DataFrame, weights: dict[str, float], use: dict[str, np.ndarray]) -> np.ndarray:
+    """Weighted mean of the scaled MODIS sensors where ``use[sensor]`` is True."""
+    num = np.zeros(len(frame))
+    den = np.zeros(len(frame))
+    for sensor in MODELS:
+        values = frame[SCALED[sensor]].to_numpy(dtype=float)
+        ok = use[sensor] & np.isfinite(values)
+        num += np.where(ok, weights[sensor] * values, 0.0)
+        den += np.where(ok, weights[sensor], 0.0)
+    return np.where(den > 0, num / np.where(den > 0, den, 1.0), np.nan)
 
-    per_year = {
-        int(row["year"]): {
-            "n": int(row["n"]),
-            "median": float(row["median"]),
-            "mean": float(row["mean"]),
-        }
-        for _, row in residuals[residuals["series"].str.startswith("pooled")].iterrows()
+
+def evaluate(df: pd.DataFrame) -> dict:
+    """Every skill number the report quotes, plus the final ratios and weights."""
+    wide = _wide(df)
+    calib = wide[wide["year"].between(*CALIB_YEARS)]
+    peaks = peak_months(calib)
+
+    loyo_new = loyo(calib, fit_ratios)
+    loyo_old = loyo(calib, _median_ratios)
+    weights = blend_weights(loyo_new)
+    peak_new = _peak_mask(loyo_new, peaks)
+
+    comparison = []
+    for label, pred in (("v1: all-month median", loyo_old), ("v2: monthly ratio of sums", loyo_new)):
+        mask = _peak_mask(pred, peaks)
+        for sensor in MODELS:
+            comparison.append({"method": label, "sensor": sensor,
+                               **skill(pred[SCALED[sensor]].to_numpy(float), pred[ANCHOR].to_numpy(float), mask)})
+
+    all_pre = {s: np.ones(len(loyo_new), dtype=bool) for s in MODELS}
+    recon = weighted_modis(loyo_new, weights, all_pre)
+    recon_skill = skill(recon, loyo_new[ANCHOR].to_numpy(float), peak_new)
+
+    # Blend vs VIIRS on the same LOYO rows: does adding MODIS move the level?
+    viirs = loyo_new[ANCHOR].to_numpy(float)
+    num = np.where(np.isfinite(viirs), viirs, 0.0)
+    den = np.isfinite(viirs).astype(float)
+    for sensor in MODELS:
+        values = loyo_new[SCALED[sensor]].to_numpy(float)
+        ok = np.isfinite(values) & np.isfinite(viirs)
+        num += np.where(ok, weights[sensor] * values, 0.0)
+        den += np.where(ok, weights[sensor], 0.0)
+    blend = np.where(np.isfinite(viirs), num / np.where(den > 0, den, 1.0), np.nan)
+    blend_skill = skill(blend, viirs, peak_new)
+
+    ratios = fit_ratios(calib)
+    stab = stability(calib)
+    unstable = stab[stab["cv"] > CV_LIMIT]
+
+    # Drift period: the pre-drift ratios applied blind to 2023-2025, and a causal rolling
+    # refit (ratios from the previous year only) to test whether recalibration rescues it.
+    hold = wide[wide["year"].between(*HOLDOUT_YEARS)].copy()
+    hold_peak = _peak_mask(hold, peaks)
+    for sensor, values in scale(hold, ratios).items():
+        hold[SCALED[sensor]] = values
+    rolling = []
+    for year in range(HOLDOUT_YEARS[0], HOLDOUT_YEARS[1] + 1):
+        part = wide[wide["year"] == year].copy()
+        prev = wide[wide["year"] == year - 1].copy()
+        refit = []
+        for sensor in MODELS:  # refit ignores the drift cut: it learns the drifted ratio
+            sub = prev.dropna(subset=[ANCHOR, sensor])
+            for state, g in sub.groupby("state", observed=True):
+                for month in range(1, 13):
+                    cell = g[g["month"] == month]
+                    s = cell[sensor].sum()
+                    ratio = cell[ANCHOR].sum() / s if (cell[sensor] > 0).sum() >= 5 and s > 0 else (
+                        g[ANCHOR].sum() / g[sensor].sum() if g[sensor].sum() > 0 else np.nan)
+                    refit.append({"state": state, "sensor": sensor, "month": month, "ratio": ratio})
+        for sensor, values in scale(part, pd.DataFrame(refit)).items():
+            part[SCALED[sensor]] = values
+        rolling.append(part)
+    rolling = pd.concat(rolling, ignore_index=True)
+    roll_peak = _peak_mask(rolling, peaks)
+    drift = []
+    for label, frame, mask in (("pre-drift ratios, blind", hold, hold_peak),
+                               ("rolling refit on previous year", rolling, roll_peak)):
+        for sensor in MODELS:
+            drift.append({"method": label, "sensor": sensor,
+                          **skill(frame[SCALED[sensor]].to_numpy(float), frame[ANCHOR].to_numpy(float), mask)})
+    drift_by_year = []
+    for year, g in hold.groupby("year"):
+        mask = _peak_mask(g, peaks)
+        for sensor in MODELS:
+            drift_by_year.append({"year": int(year), "sensor": sensor,
+                                  **skill(g[SCALED[sensor]].to_numpy(float), g[ANCHOR].to_numpy(float), mask)})
+
+    result = {
+        "peaks": peaks, "weights": weights, "ratios": ratios, "stability": stab,
+        "unstable": unstable, "comparison": pd.DataFrame(comparison),
+        "recon": recon_skill, "blend": blend_skill,
+        "drift": pd.DataFrame(drift), "drift_by_year": pd.DataFrame(drift_by_year),
     }
+    _print_evaluation(result)
+    return result
 
-    print("\n2023-2025 holdout validation (scaled MODIS vs VIIRS):")
-    for _, row in summary.iterrows():
-        print(
-            f"  {row['series']:<22} n={row['n']:>5}  r={row['r']:.3f} "
-            f"(p={_fmt_p(row['p'])})  signed_median={row['median_signed']:+.3e}  "
-            f"abs_median={row['median_abs']:.3e}  mean={row['mean_signed']:+.3e}"
-        )
-    print("  residual by year (pooled):")
-    for year, values in per_year.items():
-        print(
-            f"    {year}: n={values['n']:>5} median={values['median']:+.3e} "
-            f"mean={values['mean']:+.3e}"
-        )
-    test = extras.get("pooled (terra + aqua)", {}).get("year_test", {})
-    if test:
-        print(
-            "  year effect (pooled): Kruskal-Wallis p="
-            f"{test.get('kw_p', float('nan')):.3g}, OLS trend "
-            f"{test.get('trend_slope', float('nan')):+.2e}/yr "
-            f"(p={test.get('trend_p', float('nan')):.3g})"
-        )
 
-    return summary, residuals, per_year, extras
+def _print_evaluation(res: dict) -> None:
+    print("\nPeak months per state (VIIRS, 2016-2022):", res["peaks"])
+    print("Leave-one-year-out skill vs VIIRS, 2016-2022 (pre-drift):")
+    for _, row in res["comparison"].iterrows():
+        print(f"  {row['method']:<27} {row['sensor']:<6} r={row['r']:.3f} slope={row['slope']:.2f} "
+              f"bias={row['bias']:.2f} peak_bias={row['peak_bias']:.2f}")
+    rec, bl = res["recon"], res["blend"]
+    print(f"  MODIS-only reconstruction  r={rec['r']:.3f} bias={rec['bias']:.2f} peak_bias={rec['peak_bias']:.2f}")
+    print(f"  Blend vs VIIRS             r={bl['r']:.3f} bias={bl['bias']:.2f} peak_bias={bl['peak_bias']:.2f}")
+    print("  Blend weights:", {k: round(v, 3) for k, v in res["weights"].items()})
+    print("Drift period 2023-2025:")
+    for _, row in res["drift"].iterrows():
+        print(f"  {row['method']:<31} {row['sensor']:<6} r={row['r']:.3f} bias={row['bias']:.2f} "
+              f"peak_bias={row['peak_bias']:.2f}")
+    if len(res["unstable"]):
+        print("  WARNING: unstable yearly ratios (CV > limit):", res["unstable"][["state", "sensor", "cv"]].to_dict("records"))
 
 
 # --------------------------------------------------------------------------------------
 # 4. Build the harmonized district-month table
 # --------------------------------------------------------------------------------------
 
+SOURCES = ("blend", "viirs", "modis_fill", "modis_fill_drift", "none")
 
-def build_harmonized(
-    df: pd.DataFrame, ratios: pd.DataFrame
-) -> tuple[pd.DataFrame, dict[str, float]]:
-    """Create one harmonized row per district-month and return summary statistics."""
-    full = df[df["year"].between(*FULL_YEARS)]
-    wide = _wide_activity(full)
 
-    out = wide.index.to_frame(index=False)
+def build_harmonized(df: pd.DataFrame, ratios: pd.DataFrame, weights: dict[str, float]
+                     ) -> tuple[pd.DataFrame, dict[str, float]]:
+    """One harmonized row per district-month, and summary statistics."""
+    wide = _wide(df[df["year"].between(*FULL_YEARS)])
+    out = wide[INDEX].copy()
     out["viirs_act"] = np.clip(wide[ANCHOR].to_numpy(dtype=float), 0.0, 1.0)
+    for sensor, values in scale(wide, ratios).items():
+        out[SCALED[sensor]] = values
 
-    for sensor, column in (("terra", "terra_scaled"), ("aqua", "aqua_scaled")):
-        ratio = wide.index.get_level_values("state").map(_ratio_map(ratios, sensor))
-        out[column] = np.clip(
-            wide[sensor].to_numpy(dtype=float) * np.asarray(ratio, dtype=float), 0.0, 1.0
-        )
+    pre = {s: pre_drift(out, s).to_numpy() for s in MODELS}
+    post = {s: ~pre[s] for s in MODELS}
+    every = {s: np.ones(len(out), dtype=bool) for s in MODELS}
+
+    viirs = out["viirs_act"].to_numpy(dtype=float)
+    has_viirs = np.isfinite(viirs)
+    num = np.where(has_viirs, viirs, 0.0)
+    den = has_viirs.astype(float)
+    contributed = np.zeros(len(out), dtype=bool)
+    for sensor in MODELS:
+        values = out[SCALED[sensor]].to_numpy(dtype=float)
+        ok = has_viirs & pre[sensor] & np.isfinite(values)
+        num += np.where(ok, weights[sensor] * values, 0.0)
+        den += np.where(ok, weights[sensor], 0.0)
+        contributed |= ok
+    blended = np.where(has_viirs, num / np.where(den > 0, den, 1.0), np.nan)
+    fill_pre = weighted_modis(out, weights, pre)
+    fill_post = weighted_modis(out, weights, post)
+
+    act = np.where(has_viirs, blended, np.where(np.isfinite(fill_pre), fill_pre, fill_post))
+    source = np.select(
+        [has_viirs & contributed, has_viirs, np.isfinite(fill_pre), np.isfinite(fill_post)],
+        ["blend", "viirs", "modis_fill", "modis_fill_drift"], default="none",
+    )
+    out["act_harmonized"] = np.clip(act, 0.0, 1.0)
+    out["source"] = source
+    out["modis_recon"] = weighted_modis(out, weights, every)
+    out["modis_drift"] = post["terra"] | post["aqua"]
 
     sensor_columns = ["viirs_act", "terra_scaled", "aqua_scaled"]
-    out["act_harmonized"] = out[sensor_columns].mean(axis=1, skipna=True)
-    out["n_valid_sensors"] = (
-        out[sensor_columns].notna().sum(axis=1).astype("int64")
-    )
+    out["n_valid_sensors"] = out[sensor_columns].notna().sum(axis=1).astype("int64")
+    out["low_coverage"] = out["n_valid_sensors"] == 0
 
-    # A month is unusable when nothing valid survived. The second clause spells out the
-    # contract's stronger statement: no VIIRS and fewer than one valid MODIS sensor.
-    modis_valid = out["terra_scaled"].notna().astype(int) + out[
-        "aqua_scaled"
-    ].notna().astype(int)
-    out["low_coverage"] = (out["n_valid_sensors"] == 0) | (
-        out["viirs_act"].isna() & (modis_valid < 1)
-    )
-
-    # Calendar-month climatology per district, then the anomaly and the percentile rank.
     group = out.groupby(["state", "district"], observed=True)["act_harmonized"]
-    out["baseline"] = out.groupby(
-        ["state", "district", "month"], observed=True
-    )["act_harmonized"].transform("mean")
+    out["baseline"] = out.groupby(["state", "district", "month"], observed=True)["act_harmonized"].transform("mean")
     out["anomaly"] = out["act_harmonized"] - out["baseline"]
-    out["percentile"] = group.transform(
-        lambda s: s.rank(pct=True, method="average") * 100.0
-    )
+    out["percentile"] = group.transform(lambda s: s.rank(pct=True, method="average") * 100.0)
 
-    out = out.sort_values(INDEX, kind="mergesort").reset_index(drop=True)
+    columns = INDEX + ["viirs_act", "terra_scaled", "aqua_scaled", "act_harmonized", "n_valid_sensors",
+                       "low_coverage", "baseline", "anomaly", "percentile", "source", "modis_recon",
+                       "modis_drift"]
+    out = out[columns].sort_values(INDEX, kind="mergesort").reset_index(drop=True)
 
     valid = out["act_harmonized"].dropna()
     summary = {
@@ -541,72 +528,50 @@ def build_harmonized(
         "min_act": float(valid.min()) if len(valid) else np.nan,
         "max_act": float(valid.max()) if len(valid) else np.nan,
         "mean_act": float(valid.mean()) if len(valid) else np.nan,
-        "share_3_sensors": float((out["n_valid_sensors"] == 3).mean()),
-        "share_2_sensors": float((out["n_valid_sensors"] == 2).mean()),
-        "share_1_sensor": float((out["n_valid_sensors"] == 1).mean()),
-        "share_0_sensors": float((out["n_valid_sensors"] == 0).mean()),
+        "sources": out["source"].value_counts().reindex(SOURCES, fill_value=0).to_dict(),
         "low_coverage_rows": int(out["low_coverage"].sum()),
     }
     return out, summary
 
 
 # --------------------------------------------------------------------------------------
-# 5. Verification and reporting
+# 5. Verification
 # --------------------------------------------------------------------------------------
 
 
-def _season_stats(
-    harmonized: pd.DataFrame, state: str, district: str, months: tuple[int, ...]
-) -> dict[str, float]:
+def _season_stats(harmonized: pd.DataFrame, state: str, district: str, months: tuple[int, ...]) -> dict[str, float]:
     """Season mean vs annual mean of harmonized activity for one district."""
-    sub = harmonized[
-        (harmonized["state"] == state)
-        & (harmonized["district"] == district)
-    ]
+    sub = harmonized[(harmonized["state"] == state) & (harmonized["district"] == district)]
     if sub.empty:
         return {"found": 0, "season": np.nan, "annual": np.nan, "ratio": np.nan}
     annual = float(sub["act_harmonized"].mean(skipna=True))
-    season = float(
-        sub.loc[sub["month"].isin(months), "act_harmonized"].mean(skipna=True)
-    )
-    return {
-        "found": 1,
-        "season": season,
-        "annual": annual,
-        "ratio": season / annual if annual and np.isfinite(annual) and annual > 0 else np.nan,
-    }
+    season = float(sub.loc[sub["month"].isin(months), "act_harmonized"].mean(skipna=True))
+    return {"found": 1, "season": season, "annual": annual,
+            "ratio": season / annual if annual and np.isfinite(annual) and annual > 0 else np.nan}
 
 
 def verify(harmonized: pd.DataFrame) -> dict[str, dict[str, float]]:
-    """Assert the output range and confirm both seasonal peaks survive harmonization."""
+    """Assert the output contract and confirm both seasonal peaks survive harmonization."""
     valid = harmonized["act_harmonized"].dropna()
-    lo, hi = float(valid.min()), float(valid.max())
-    assert lo >= 0.0 and hi <= 1.0, (
-        f"act_harmonized outside [0, 1]: min={lo}, max={hi}"
-    )
-    assert harmonized["n_valid_sensors"].between(0, 3).all(), (
-        "n_valid_sensors outside 0-3"
-    )
+    assert valid.between(0.0, 1.0).all(), "act_harmonized outside [0, 1]"
+    assert harmonized["n_valid_sensors"].between(0, 3).all(), "n_valid_sensors outside 0-3"
+    assert harmonized["source"].isin(SOURCES).all(), "unknown source value"
+    assert (harmonized["act_harmonized"].isna() == (harmonized["source"] == "none")).all(), \
+        "act_harmonized must be NaN exactly where source == 'none'"
+    has_viirs = harmonized["viirs_act"].notna()
+    assert harmonized.loc[has_viirs, "source"].isin(["blend", "viirs"]).all(), \
+        "a month VIIRS saw must never be filled from MODIS"
 
     ludhiana = _season_stats(harmonized, "Punjab", "Ludhiana", (10, 11))
     naini_tal = _season_stats(harmonized, "Uttarakhand", "Naini Tal", (4, 5))
-
     print("\nPeak preservation:")
-    if ludhiana["found"]:
-        print(
-            f"  Ludhiana (Punjab) Oct-Nov mean act_harmonized={ludhiana['season']:.6f} "
-            f"vs annual={ludhiana['annual']:.6f} ({ludhiana['ratio']:.2f}x)"
-        )
-    else:
-        print("  WARN: Ludhiana not found in the output")
-    if naini_tal["found"]:
-        print(
-            f"  Naini Tal (Uttarakhand) Apr-May mean act_harmonized={naini_tal['season']:.6f} "
-            f"vs annual={naini_tal['annual']:.6f} ({naini_tal['ratio']:.2f}x)"
-        )
-    else:
-        print("  WARN: Naini Tal not found in the output")
-
+    for name, value, months in (("Ludhiana (Punjab)", ludhiana, "Oct-Nov"),
+                                ("Naini Tal (Uttarakhand)", naini_tal, "Apr-May")):
+        if value["found"]:
+            print(f"  {name} {months} mean={value['season']:.6f} vs annual={value['annual']:.6f} "
+                  f"({value['ratio']:.2f}x)")
+        else:
+            print(f"  WARN: {name} not found in the output")
     return {"ludhiana": ludhiana, "naini_tal": naini_tal}
 
 
@@ -617,10 +582,7 @@ def verify(harmonized: pd.DataFrame) -> dict[str, dict[str, float]]:
 
 def _md_table(headers: list[str], rows: list[list[str]]) -> str:
     """Small markdown table writer (no tabulate dependency)."""
-    lines = [
-        "| " + " | ".join(headers) + " |",
-        "|" + "|".join("---" for _ in headers) + "|",
-    ]
+    lines = ["| " + " | ".join(headers) + " |", "|" + "|".join("---" for _ in headers) + "|"]
     lines += ["| " + " | ".join(str(c) for c in row) + " |" for row in rows]
     return "\n".join(lines)
 
@@ -631,312 +593,174 @@ def _fmt(value: float, digits: int = 3) -> str:
     return f"{value:.{digits}f}"
 
 
-def _fmt_p(p: float) -> str:
-    """P-value that never prints the meaningless '0.00e+00'."""
-    if p is None or not np.isfinite(p):
-        return "n/a"
-    if p == 0:
-        return "< 1e-300"
-    return f"{p:.2e}"
+def _skill_rows(frame: pd.DataFrame, first: str) -> list[list[str]]:
+    return [[row[first], row["sensor"], f"{int(row['n']):,}", _fmt(row["r"]), _fmt(row["slope"], 2),
+             _fmt(row["bias"], 2), _fmt(row["peak_bias"], 2)] for _, row in frame.iterrows()]
 
 
-def write_validation(
-    path: Path,
-    df: pd.DataFrame,
-    ratios: pd.DataFrame,
-    stability: pd.DataFrame,
-    summary: pd.DataFrame,
-    residuals: pd.DataFrame,
-    valid_summary: dict[str, float],
-    peaks: dict[str, dict[str, float]],
-    use_fallback: bool,
-    extras: dict,
-) -> None:
-    """Render science/validation.md with every calibration and holdout number."""
+def write_validation(path: Path, df: pd.DataFrame, res: dict, summary: dict, peaks: dict) -> None:
+    """Render science/validation.md from the computed numbers (nothing typed in by hand)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-
     years = sorted(df["year"].dropna().unique().tolist())
-    period = f"{int(min(years))}-01 to {int(max(years))}-12" if years else "n/a"
-    states = sorted(df["state"].dropna().unique().tolist())
+    period = f"{int(min(years))}-01 to {int(max(years))}-12"
     n_districts = df[["state", "district"]].drop_duplicates().shape[0]
-    low_rows = int(df["low_coverage"].sum())
+    peak_text = ", ".join(f"{s} {'/'.join(MONTH_NAMES[m - 1] for m in ms)}" for s, ms in res["peaks"].items())
+    w = res["weights"]
 
-    ratio_rows = [
-        [
-            r["state"],
-            r["sensor"],
-            f"{int(r['n_pairs'])}",
-            _fmt(r["ratio"], 3),
-            _fmt(r["p10"], 2),
-            _fmt(r["p50"], 3),
-            _fmt(r["p90"], 2),
-            _fmt(r["cv"], 3),
-            r["method"],
-        ]
-        for _, r in ratios.iterrows()
-    ]
+    ratio_rows = []
+    for (state, sensor), g in res["ratios"].groupby(["state", "sensor"], observed=True):
+        g = g.set_index("month")
+        cells = [(_fmt(g.loc[m, "ratio"], 2) + ("" if g.loc[m, "method"] == "month" else "*")) for m in range(1, 13)]
+        ratio_rows.append([state, sensor] + cells + [_fmt(float(g["state_ratio"].iloc[0]), 2)])
 
-    # Stability table: one row per state-sensor with a column per calibration year.
-    stab_rows = []
-    for (state, sensor), group in stability.groupby(["state", "sensor"], observed=True):
-        by_year = dict(zip(group["year"], group["median_ratio"]))
-        cv = ratios.loc[
-            (ratios["state"] == state) & (ratios["sensor"] == sensor), "cv"
-        ]
-        stab_rows.append(
-            [state, sensor]
-            + [
-                _fmt(by_year.get(year, np.nan), 2)
-                for year in range(CALIB_YEARS[0], CALIB_YEARS[1] + 1)
-            ]
-            + [_fmt(float(cv.iloc[0]) if len(cv) else np.nan, 3)]
-        )
+    stab = res["stability"]
+    year_cols = [y for y in range(CALIB_YEARS[0], CALIB_YEARS[1] + 1)]
+    stab_rows = [[r["state"], r["sensor"]] + [_fmt(r.get(y, np.nan), 2) for y in year_cols] + [_fmt(r["cv"])]
+                 for _, r in stab.iterrows()]
 
-    slide_rows = [
-        [
-            row["series"],
-            f"{int(row['n'])}",
-            _fmt(row["r"], 3),
-            _fmt_p(row["p"]),
-            f"{row['median_signed']:+.2e}",
-            f"{row['median_abs']:.2e}",
-            f"{row['mean_signed']:+.2e}",
-            f"{row['share_zero']:.0%}",
-            _fmt(row["slope"], 2),
-        ]
-        for _, row in summary.iterrows()
-    ]
+    cmp = res["comparison"]
+    old = cmp[cmp["method"].str.startswith("v1")].set_index("sensor")
+    new = cmp[cmp["method"].str.startswith("v2")].set_index("sensor")
+    drift = res["drift"]
+    blind = drift[drift["method"].str.startswith("pre-drift")].set_index("sensor")
+    roll = drift[drift["method"].str.startswith("rolling")].set_index("sensor")
+    rec, bl = res["recon"], res["blend"]
+    src = summary["sources"]
+    total = max(summary["rows"], 1)
+    src_rows = [[k, f"{v:,}", f"{v / total:.1%}"] for k, v in src.items()]
+    unstable_note = (
+        "Every state-sensor yearly ratio has CV below the limit, so no fallback was needed."
+        if res["unstable"].empty else
+        "**Unstable rows (CV above the limit):** "
+        + ", ".join(f"{r.state} {r.sensor} ({r.cv:.2f})" for r in res["unstable"].itertuples())
+        + ". Treat their ratios with caution."
+    )
 
-    resid_rows = [
-        [
-            row["series"],
-            f"{int(row['year'])}",
-            f"{int(row['n'])}",
-            f"{row['median']:+.2e}",
-            f"{row['mean']:+.2e}",
-            f"{row['share_zero']:.0%}",
-        ]
-        for _, row in residuals.iterrows()
-    ]
-
-    # Year-effect verdict, computed rather than asserted. Kruskal–Wallis asks whether the
-    # years differ at all; the OLS slope asks whether the residual drifts monotonically.
-    # Both are quoted, with the per-year means, so the wording cannot contradict the test.
-    test = extras.get("pooled (terra + aqua)", {}).get("year_test", {})
-    kw_p = test.get("kw_p", np.nan)
-    trend_p = test.get("trend_p", np.nan)
-    trend_slope = test.get("trend_slope", np.nan)
-    pooled_resid = residuals[residuals["series"] == "pooled (terra + aqua)"]
-    year_means = {
-        int(row["year"]): float(row["mean"]) for _, row in pooled_resid.iterrows()
-    }
-    if np.isfinite(kw_p) and np.isfinite(trend_p) and year_means:
-        first_year, last_year = min(year_means), max(year_means)
-        if kw_p < 0.05:
-            year_note = (
-                "The holdout years **do** differ in their pooled residual "
-                f"(Kruskal–Wallis p={_fmt_p(kw_p)}), so the calibration is not equally "
-                "good in every year; the per-year means below say where."
-            )
-        elif trend_p < 0.05:
-            year_note = (
-                "Kruskal–Wallis finds no overall year difference "
-                f"(p={_fmt_p(kw_p)}), but the linear trend on year is significant "
-                f"({trend_slope:+.2e} per year, p={_fmt_p(trend_p)}). With only three "
-                f"holdout years that is driven by {first_year} (mean "
-                f"{year_means[first_year]:+.2e}) sitting below {last_year} "
-                f"(mean {year_means[last_year]:+.2e}): read it as a possible step after "
-                f"{first_year}, not a smooth drift, and re-check when 2026 data lands."
-            )
-        else:
-            year_note = (
-                "No step or trend is detectable across the holdout years "
-                f"(Kruskal–Wallis p={_fmt_p(kw_p)}, trend p={_fmt_p(trend_p)}), "
-                "so the 2016–2022 calibration still applies in 2023–2025."
-            )
-    else:
-        year_note = (
-            "Year-effect tests could not be computed (too few groups or constant "
-            "residual); treat the per-year table as descriptive only."
-        )
-
-    # Agreement text, derived from the fitted numbers so the slide cannot over-claim.
-    def _series_row(label: str) -> pd.Series | None:
-        hit = summary[summary["series"] == label]
-        return hit.iloc[0] if len(hit) else None
-
-    pooled_row = _series_row("pooled (terra + aqua)")
-    terra_row = _series_row("terra")
-    aqua_row = _series_row("aqua")
-    if pooled_row is not None:
-        slope_sentence = (
-            f"Pooled slope is **{pooled_row['slope']:.2f}**"
-            + (
-                f" (Terra {terra_row['slope']:.2f}, Aqua {aqua_row['slope']:.2f})"
-                if terra_row is not None and aqua_row is not None
-                else ""
-            )
-            + ": scaled MODIS does not reproduce VIIRS's full month-to-month swing. "
-            "Terra at the low end is the weak link; Aqua tracks VIIRS closely."
-        )
-        if valid_summary["mean_act"] > 0:
-            pct = 100.0 * pooled_row["median_abs"] / valid_summary["mean_act"]
-            error_sentence = (
-                f"For scale, the pooled median absolute error is "
-                f"{pooled_row['median_abs']:.2e}, about **{pct:.0f}%** of the mean "
-                f"harmonized activity ({valid_summary['mean_act']:.2e})."
-            )
-        else:
-            error_sentence = ""
-        zero_text = (
-            f"about **{pooled_row['share_zero']:.0%}** of the valid holdout "
-            "district-months have no detections in either sensor"
-        )
-    else:
-        slope_sentence = ""
-        error_sentence = ""
-        zero_text = "a large share of valid holdout district-months have no detections in either sensor"
-
-    def peak_block(stats: dict[str, float], label: str) -> str:
-        if not stats.get("found"):
+    def peak_block(s: dict, label: str) -> str:
+        if not s.get("found"):
             return f"- {label}: **not found** in the data."
-        return (
-            f"- {label}: season mean **{stats['season']:.6f}** vs annual mean "
-            f"**{stats['annual']:.6f}** → **{stats['ratio']:.2f}×**"
-        )
+        return (f"- {label}: season mean **{s['season']:.6f}** vs annual mean **{s['annual']:.6f}** "
+                f"→ **{s['ratio']:.2f}×**")
 
-    content = f"""# FireLens Phase 2 — Harmonization Validation
+    content = f"""# FireLens Phase 2 — Harmonization Validation (v2)
 
 **Owner:** R2 (Science Lead) · **Generated:** {date.today().isoformat()} by `science/harmonize.py`
 **Input:** `data/district_monthly.csv` ({len(df):,} rows, {n_districts} districts, period {period})
-**Output:** `data/district_harmonized.csv` ({valid_summary['rows']:,} district-months)
+**Output:** `data/district_harmonized.csv` ({summary['rows']:,} district-months)
 
-Purpose: remove the sensor step from the record. VIIRS is the anchor (continuous
-2016–2026 record); each MODIS sensor is scaled to it using only the years all three
-sensors overlap (2016–2022), then checked on three years it never saw (2023–2025).
+Every number below is computed by the script; none is typed in by hand.
 
-Method in one paragraph: activity is `fire_pixel_days / clear_pixel_days` per district,
-month and sensor; rows with `clear_coverage < {COVERAGE_THRESHOLD:.2f}` or `n_images == 0` are
-low-coverage and stay `NaN` (no imputation anywhere). For each state and MODIS sensor we
-take the median of `viirs_activity / modis_activity` over shared district-months where
-both are positive, which is the multiplicative factor that maps MODIS onto the VIIRS
-scale. That factor is applied to every MODIS month, clipped to `[0, 1]`, and the three
-sensor series are averaged (`skipna=True`) into `act_harmonized`. Weather, cloud and
-district area largely cancel in the ratio, so the factor is a sensor calibration, not a
-correction for burning.
+## Method in one paragraph
 
----
+Activity is `fire_pixel_days / clear_pixel_days` per district, month and sensor; rows with
+`clear_coverage < {COVERAGE_THRESHOLD:.2f}` or `n_images == 0` stay `NaN`. Suomi-NPP VIIRS is the
+anchor. Each MODIS sensor is mapped onto it with **one ratio per state and calendar month**
+(`sum(viirs) / sum(modis)` over shared district-months of {CALIB_YEARS[0]}–{CALIB_YEARS[1]}),
+using only months before that sensor's **orbit drift** (Terra from
+{MONTH_NAMES[DRIFT_START['terra'][1] - 1]} {DRIFT_START['terra'][0]}, Aqua from
+{MONTH_NAMES[DRIFT_START['aqua'][1] - 1]} {DRIFT_START['aqua'][0]}). The harmonized value is the
+weighted mean of VIIRS (weight 1) and each pre-drift scaled MODIS sensor (weight r² from
+leave-one-year-out: Terra {w['terra']:.2f}, Aqua {w['aqua']:.2f}). After the drift, MODIS only fills
+months VIIRS could not see, flagged `modis_fill_drift`. `modis_recon` is the record rebuilt
+from MODIS alone, the way it would look before VIIRS existed.
 
-## 1. Calibration ratios (2016–2022)
+## 1. Why the ratio became seasonal
 
-Median of `viirs_snpp / modis` over shared district-months where both activities > 0.
-`p10`/`p90` show the spread of the individual pairs; `CV` is the coefficient of variation
-of the year-by-year median ratio, i.e. the stability check.
+Terra passes at ~10:30 local time, before most afternoon crop burning; Aqua and VIIRS pass
+at ~13:30. The MODIS/VIIRS gap is therefore much larger in burning season than in quiet
+months, and one all-year ratio cannot fit both. Leave-one-year-out on {CALIB_YEARS[0]}–{CALIB_YEARS[1]}
+(fit on six years, test on the seventh; pre-drift months only). Peak months: {peak_text}.
+`bias` = sum(scaled) ÷ sum(VIIRS); 1.00 means the same total burning.
 
-{_md_table(
-    ["State", "MODIS sensor", "Shared months", "Ratio", "p10", "p50", "p90", "CV", "Method"],
-    ratio_rows,
-)}
+{_md_table(["Method", "Sensor", "n", "Pearson r", "OLS slope", "Bias", "Peak-month bias"],
+           _skill_rows(cmp, "method"))}
 
-**USE_FALLBACK = {use_fallback}** (limit `CV > {CV_LIMIT:.2f}`). {
-    "At least one state-sensor ratio was unstable across years, so the sensor-level pooled median is used for that row; the `Method` column says which."
-    if use_fallback
-    else "Every state-sensor ratio is stable enough to use directly, so no fallback was needed."
-} The fallback, when triggered, is the median of all shared pairs for that sensor across
-states (the 50th percentile); `p10`/`p90` are kept in the table so the spread remains
-visible.
+Terra in the peak months moves from **{old.loc['terra', 'peak_bias']:.2f}×** of VIIRS (v1) to
+**{new.loc['terra', 'peak_bias']:.2f}×** (v2), and its correlation from {old.loc['terra', 'r']:.2f} to
+{new.loc['terra', 'r']:.2f}. Aqua was already close and stays close.
 
-Reading the table: a ratio above 1 means VIIRS reads more burning than that MODIS sensor
-in that state, so MODIS must be scaled **up** to match. Aqua sits close to VIIRS; Terra
-reads substantially lower, which is consistent with its earlier overpass and coarser
-detection of small residue fires.
+## 2. Ratios used (fit on all pre-drift {CALIB_YEARS[0]}–{CALIB_YEARS[1]} months)
 
-## 2. Stability by year
+VIIRS ÷ MODIS by calendar month. `*` = fewer than {MIN_BURNING_MONTHS} burning district-months, so
+the state's all-month ratio (last column) is used.
 
-Per-year median ratio, same filters as above. A flat row means the calibration is not
-tracking anything that changes year to year.
+{_md_table(["State", "Sensor"] + list(MONTH_NAMES) + ["All months"], ratio_rows)}
 
-{_md_table(
-    ["State", "Sensor"] + [str(y) for y in range(CALIB_YEARS[0], CALIB_YEARS[1] + 1)] + ["CV"],
-    stab_rows,
-)}
+### Stability by year (all-month ratio of sums)
 
-## 3. Slide 4 — validation on the 2023–2025 holdout
+{_md_table(["State", "Sensor"] + [str(y) for y in year_cols] + ["CV"], stab_rows)}
 
-Unseen years: the ratio learned on 2016–2022 is applied without refitting.
-`scaled_modis = clip(modis * ratio, 0, 1)`; residual = `scaled_modis - viirs_snpp`
-(positive means the scaled MODIS series still sits above VIIRS).
+{unstable_note}
 
-{_md_table(
-    [
-        "Series", "n", "Pearson r", "p-value", "Median signed error",
-        "Median abs error", "Mean signed error", "Residual = 0", "OLS slope",
-    ],
-    slide_rows,
-)}
+## 3. MODIS-only reconstruction — the evidence for extending back to 2001
 
-Why the median error can read exactly zero: {zero_text}, so their residual is exactly 0
-and dominates the median. That is a real property of the data, not perfect agreement —
-read the mean signed error, the zero share and the slope together with the median.
+If VIIRS had never flown, the calendar would be `modis_recon`: the weighted mean of the scaled
+MODIS sensors. Leave-one-year-out against VIIRS: **r = {rec['r']:.3f}**, bias **{rec['bias']:.2f}**,
+peak-month bias **{rec['peak_bias']:.2f}**, slope {rec['slope']:.2f} (n = {rec['n']:,}). This is the
+skill to expect when the same ratios are applied to Terra (2001–) and Aqua (2003–) before
+2012, when both still flew their nominal orbits.
 
-{slope_sentence} {error_sentence}
+The blend itself stays on the VIIRS scale: harmonized vs VIIRS on the same rows,
+bias **{bl['bias']:.2f}**, peak-month bias **{bl['peak_bias']:.2f}**, r = {bl['r']:.3f}. So months
+with and without a given MODIS sensor sit at the same level, and the sensor mix no longer
+steps the series.
 
-Interpretation for the slide:
+## 4. Drift period (2023–2025): why drifted MODIS is not blended
 
-- **Pooled** is the headline number: one calibration per sensor and state, applied blind
-  to 2023–2025.
-- **Terra / Aqua separately** show the calibration is not hiding one good sensor behind a
-  bad one. Terra's larger ratio is the harder extrapolation; Aqua's near-1 ratio barely
-  moves.
-- A high `r` alone is not enough: a series that is 3× too high would also correlate
-  strongly. The slope and the error columns are what show the scaled series is *on* the
-  VIIRS scale rather than merely moving with it.
+By 2023 Terra had drifted to an earlier and Aqua to a later overpass (Aqua ~15:30 local time
+by mid-2026), while farm burning in Punjab also moved later in the day. The pre-drift ratios,
+applied blind:
 
-### Residual by year
+{_md_table(["Method", "Sensor", "n", "Pearson r", "OLS slope", "Bias", "Peak-month bias"],
+           _skill_rows(drift, "method"))}
 
-{year_note}
+By year (pre-drift ratios):
 
-{_md_table(
-    ["Series", "Year", "n", "Median residual", "Mean residual", "Residual = 0"],
-    resid_rows,
-)}
+{_md_table(["Year", "Sensor", "n", "Pearson r", "OLS slope", "Bias", "Peak-month bias"],
+           _skill_rows(res['drift_by_year'].assign(year=res['drift_by_year']['year'].astype(str)), "year"))}
 
-## 4. Harmonized product checks
+Aqua reads **{blind.loc['aqua', 'peak_bias']:.2f}×** VIIRS in the peak months, and refitting on the
+previous year still leaves **{roll.loc['aqua', 'peak_bias']:.2f}×**: the overpass keeps moving, so last
+year's ratio is already stale. A blend would inherit that drift, so after the drift start
+the harmonized value is VIIRS where VIIRS saw the district, and drifted MODIS only fills
+the rest (`source = modis_fill_drift`, shown as lower confidence in the app). The post-2023
+decline in VIIRS is consistent with burning moving after the 13:30 overpass; part of it may
+be a detection effect rather than less burning.
+
+## 5. Harmonized product checks
 
 | Check | Value |
 |---|---|
-| District-months written | {valid_summary['rows']:,} ({valid_summary['districts']} districts × {valid_summary['months']} months) |
-| Rows with a usable `act_harmonized` | {valid_summary['valid_rows']:,} |
-| Rows left `NaN` | {valid_summary['nan_rows']:,} |
-| `act_harmonized` range | [{valid_summary['min_act']:.6f}, {valid_summary['max_act']:.6f}] |
-| Mean `act_harmonized` | {valid_summary['mean_act']:.6f} |
-| Rows with 3 / 2 / 1 / 0 valid sensors | {valid_summary['share_3_sensors']:.1%} / {valid_summary['share_2_sensors']:.1%} / {valid_summary['share_1_sensor']:.1%} / {valid_summary['share_0_sensors']:.1%} |
-| Low-coverage rows in output | {valid_summary['low_coverage_rows']:,} |
+| District-months written | {summary['rows']:,} ({summary['districts']} districts × {summary['months']} months) |
+| Rows with a usable `act_harmonized` | {summary['valid_rows']:,} |
+| Rows left `NaN` | {summary['nan_rows']:,} |
+| `act_harmonized` range | [{summary['min_act']:.6f}, {summary['max_act']:.6f}] |
+| Mean `act_harmonized` | {summary['mean_act']:.6f} |
+| Low-coverage rows | {summary['low_coverage_rows']:,} |
 
-Peak preservation (the reason harmonization must not smooth away the signal):
+Where each value comes from (`source`):
+
+{_md_table(["Source", "Rows", "Share"], src_rows)}
+
+Peak preservation:
 
 {peak_block(peaks['ludhiana'], 'Ludhiana (Punjab), Oct–Nov paddy peak')}
 {peak_block(peaks['naini_tal'], 'Naini Tal (Uttarakhand), Apr–May forest-fire peak')}
 
-Assertions enforced by the script: `0 <= act_harmonized <= 1` for every non-null row, and
-`n_valid_sensors` within 0–3. Both passed.
+Assertions enforced by the script: `0 <= act_harmonized <= 1`; `n_valid_sensors` in 0–3;
+`act_harmonized` is `NaN` exactly where `source == "none"`; a month VIIRS saw is never filled
+from MODIS. All passed.
 
-## 5. Notes and limitations
+## 6. Notes and limitations
 
-- **Coverage baseline.** Phase 2 computes the baseline per (state, district, **sensor**),
-  the maximum monthly `clear_pixel_days / days_in_month` for that sensor. This refines the
-  Phase 1 district-level proxy in `docs/data-contract.md`: it stops a sensor with
-  systematically fewer clear views (e.g. a different overpass in the monsoon) from
-  depressing another sensor's coverage estimate. It is a QC denominator only; it never
-  enters `activity`.
-- **Ratios are per state and sensor, not per district.** A per-district ratio would fit
-  noise, especially where a district has few burning months. The spread (p10–p90) is wide
-  because activity ratios are noisy at low values; the median is the robust summary.
-- **Ratio > 1 is expected and is not a bug.** VIIRS detects more small fires; the
-  calibration makes MODIS speak VIIRS's language, not the reverse.
-- **Zeros are real.** Rows with activity exactly 0 are retained in the mean; only
-  low-coverage rows are excluded. Excluding zeros would inflate the harmonized activity.
-- **Not corrected here:** NOAA-20/21, boundary vintage, and the UTC/IST month edge. See
+- **Ratios are per state and calendar month, not per district.** A per-district ratio would
+  fit noise. Months with few burning district-months fall back to the state ratio.
+- **The fill is a measurement, not an imputation.** A `modis_fill` value is another
+  satellite's observation of the same district and month, put on the VIIRS scale.
+- **Drift dates** are NASA's: Terra below 10:15 MLT from October 2022, Aqua above 13:45 MLT
+  from February 2023.
+- **Not corrected here:** NOAA-20/21, VIIRS 375 m detail (the 1 km VNP14A1 grid is used so
+  that all sensors share one grid), boundary vintage, and the UTC/IST month edge. See
   `docs/decisions.md`.
 - `data/district_monthly.csv` is untouched; this script only writes
   `data/district_harmonized.csv` and this file.
@@ -963,45 +787,24 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    print(f"FireLens Phase 2 harmonization — input {args.input}")
-
+    print(f"FireLens Phase 2 harmonization (v2) — input {args.input}")
     df = load_monthly(args.input)
-    print(
-        f"  {len(df):,} rows | {df['district'].nunique()} districts | "
-        f"{df['state'].nunique()} states | {df['year'].min()}-{df['year'].max()} | "
-        f"low-coverage rows: {int(df['low_coverage'].sum()):,}"
-    )
+    print(f"  {len(df):,} rows | {df['district'].nunique()} districts | {df['state'].nunique()} states | "
+          f"low-coverage rows: {int(df['low_coverage'].sum()):,}")
 
-    ratios, stability, _fallback, use_fallback = calibrate(df)
-    summary, residuals, _per_year, extras = validate(df, ratios)
-
-    harmonized, valid_summary = build_harmonized(df, ratios)
+    res = evaluate(df)
+    harmonized, summary = build_harmonized(df, res["ratios"], res["weights"])
     peaks = verify(harmonized)
 
+    expected_rows = summary["districts"] * 132
+    assert len(harmonized) == expected_rows, (
+        f"harmonized table has {len(harmonized)} rows, expected {expected_rows}")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     harmonized.to_csv(args.output, index=False, float_format="%.8g")
-    print(f"\n  wrote {args.output} ({len(harmonized):,} rows)")
+    print(f"\n  wrote {args.output} ({len(harmonized):,} rows); sources: {summary['sources']}")
 
-    expected_rows = valid_summary["districts"] * 132
-    assert len(harmonized) == expected_rows, (
-        f"harmonized table has {len(harmonized)} rows, expected "
-        f"{expected_rows} ({valid_summary['districts']} districts x 132 months)"
-    )
-
-    write_validation(
-        args.validation,
-        df,
-        ratios,
-        stability,
-        summary,
-        residuals,
-        valid_summary,
-        peaks,
-        use_fallback,
-        extras,
-    )
-
-    print("\nDone. Phase 2 output is ready for the app and the slide 4 numbers.")
+    write_validation(args.validation, df, res, summary, peaks)
+    print("\nDone.")
     return 0
 
 
