@@ -1,6 +1,6 @@
 # FireLens — Decision Log
 
-**Owner:** R2 (Science Lead) · **Status:** frozen for Phase 1 · **Last updated:** 2026-11-14
+**Owner:** R2 (Science Lead) · **Status:** updated for Phase 2 harmonization · **Last updated:** 2026-11-14
 
 Every choice below is binding for `data/district_monthly.csv`, `data/districts.geojson`, the
 QC pipeline in `science/`, and the app. Changing anything in this table requires R2's
@@ -19,6 +19,8 @@ approval and a new row — never a silent edit to the CSV or the export script.
 | 2026-11-14 | **Boundaries:** FAO/GAUL 2015 Level 2 districts, simplified to 500 m, served with a visible disclaimer. | GAUL is the only district layer already joined to the Earth Engine export, so CSV names and geometry match by construction. It is **not** India's official boundary: it is outdated, its district set predates recent reorganisations, and it may not reflect the Government of India's position. The disclaimer must appear wherever the map does. An official district shapefile replaces it only with a new decision row here. | R2 |
 | 2026-11-14 | **Gaps and missing values:** no imputation, no forward-fill, no zero-filling. Rows with `n_images == 0` stay in the file with both counts at 0 and `mean_frp_mw` / `activity` empty. Gaps are exported, not repaired. | Fabricated values are indistinguishable from measurements once they are in a CSV, and the app's blank cells are an honest statement about coverage. The gaps file (`science/gaps.csv`) is the hand-off for hatching in the app and the work list for Phase 2. | R2 |
 | 2026-11-14 | **`mean_frp_mw` is null exactly when `fire_pixel_days == 0`.** Values are non-negative and in MW (MODIS/VIIRS `MaxFRP` × 0.1). | FRP is only defined over fire pixels, so averaging it with no fire pixels would be a division by zero. A non-null FRP with zero fire pixels, or a null with fire pixels, means the export merged the wrong columns. | R2 |
+| 2026-11-14 | **Phase 2 coverage floor (`low_coverage`):** `clear_coverage < 0.10` (or `n_images == 0`), computed against each `(state, district, sensor)` maximum monthly `clear_pixel_days / days_in_month`. | Aligns with Phase 1 gap detection (<10% floor) while normalizing per sensor so VIIRS and MODIS clear-sky denominators use their native swath baselines. Low-coverage values are masked to `NaN` (never imputed) before calibration and climatology. | R2 |
+| 2026-11-14 | **Phase 2 harmonization & climatology (`data/district_harmonized.csv`):** State-specific median `VIIRS / MODIS` ratios fit on `2016-2022` positive-fire valid months (`USE_FALLBACK = False`; max annual CV `0.220 < 0.50`). `act_harmonized` is the mean of available `viirs_act`, `terra_scaled`, and `aqua_scaled` clipped to [0, 1]; `baseline` is the calendar-month climatological mean per `(state, district)`; `anomaly = act_harmonized - baseline`; `percentile` is the empirical rank (0-100) across valid months within `(state, district)`. | Blind `2023-2025` validation confirms cross-sensor agreement (`r = 0.831` Aqua, `0.703` pooled; median abs error `1.79e-5`) and preserves Ludhiana (`4.19x` Oct-Nov) and Naini Tal (`4.02x` Apr-May) peaks. | R2 |
 
 **Note on `CLAUDE.md`:** its one-line contract says "Dates are IST". That shorthand is
 superseded by the UTC row above: the file is built on UTC months, narrative text uses IST.
