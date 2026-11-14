@@ -475,6 +475,15 @@ def month_history(series: pd.DataFrame, month: int) -> pd.Series:
     return series.loc[series["month"] == month, "activity"].dropna()
 
 
+def ratio_text(ratio: float | None) -> str:
+    """Headline wording: '0×' (none detected) and '<0.01×' instead of a misleading '0.00×'."""
+    if ratio is None:
+        return "—"
+    if ratio == 0:
+        return "0× (no hotspots)"
+    return "<0.01×" if ratio < 0.01 else f"{ratio:.2f}×"
+
+
 def anomaly_ratio(value: float, history: pd.Series) -> float | None:
     """value / median(history); None if too few years or a zero median."""
     if len(history) < MIN_YEARS or history.median() == 0:
@@ -520,7 +529,7 @@ def render_metrics(series: pd.DataFrame, grid: pd.DataFrame) -> pd.Series | None
             f"({len(history)} year(s)); needs at least {MIN_YEARS}.")
     partial = dict(delta=partial_note(latest), delta_color="off", delta_arrow="off")
     cols[0].metric(f"{label} vs {MONTH_NAMES[month - 1]} median",
-                   "—" if ratio is None else f"{ratio:.2f}×", help=note, **partial)
+                   ratio_text(ratio), help=note, **partial)
     cols[1].metric(f"{label} percentile rank",
                    "—" if pct is None else ordinal(pct), help=note, **partial)
     cols[2].metric("Peak months (median activity)", " · ".join(peak_months(grid)) or "—")
