@@ -1,0 +1,33 @@
+name: CI
+
+# Every pull request and every push to main: check the data against its contract,
+# rebuild the harmonized record from scratch and render every view of the app.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: firelens
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r app/requirements.txt -r science/requirements.txt -r tests/requirements.txt
+
+      - name: Data quality checks (8 rules)
+        run: python science/run_qc.py --input data/district_monthly.csv
+
+      - name: Tests (trend maths, data contract, pipeline reproducibility, app)
+        run: python -m pytest tests -q

@@ -56,7 +56,7 @@ The NASA LP DAAC distributes all three products.
 1. **Collect** — For each of 49 districts in Punjab, Haryana and Uttarakhand, each month from January 2016, we count how many 1 km pixels were flagged as burning, and how many pixels had a clear view that month.
 2. **Normalize** — Burning activity = fire pixels ÷ clear-view pixels. This removes the cloud-cover bias that makes monsoon months look fire-free when they are simply unobserved.
 3. **Harmonize** — VIIRS Suomi-NPP is our reference sensor: it covers the whole period and is the sensor that continues the record. MODIS Terra and Aqua are scaled to it with one ratio per state and calendar month (VIIRS ÷ MODIS over 2016–2022), because Terra's morning overpass misses much more of the afternoon crop burning in Oct–Nov than in quiet months. The harmonized value blends VIIRS with the scaled MODIS sensors, weighted by how well each predicted VIIRS in unseen years, using MODIS only from before its orbit drifted (Terra Oct 2022, Aqua Feb 2023). Tested leave-one-year-out on 2016–2022, scaled Terra agrees with VIIRS at r = 0.91 and Aqua at r = 0.98, both within 4% of VIIRS's peak-season total; MODIS alone rebuilds the VIIRS calendar at r = 0.97 with a 2% bias, the evidence that the record can be extended back to 2001. The seasonal peaks survive: Ludhiana's Oct–Nov paddy burning is 4.3× its yearly average, Naini Tal's Apr–May forest fires 3.9×.
-4. **Display** — A Streamlit app lets any user pick a district (or search by latitude/longitude), a date range, and the harmonized series or any single sensor, then see a month × year calendar, yearly averages, anomalies against the monthly median and a sensor comparison. Metric cards show how the latest month with at least half its daily images compares to its historical median and percentile. The harmonized and per-sensor monthly data, and the list of individual hotspot detections (date, location, FRP, sensor) for the chosen district and dates, download as CSV; every chart exports as PNG.
+4. **Display** — A Streamlit app lets any user pick a district (or search by latitude/longitude), a date range, and the harmonized series or any single sensor, then see a month × year calendar, yearly averages, anomalies against the monthly median, a seasonal trend test (Mann-Kendall with Sen's slope, per district and as a map) and a sensor comparison. Every harmonized value shows the range of the three sensors and how many it rests on. For 19 districts a fire-type view splits detections into cropland, forest and woodland, and flags fixed heat sources such as flares. Metric cards show how the latest month with at least half its daily images compares to its historical median and percentile. The harmonized and per-sensor monthly data, and the list of individual hotspot detections (date, location, FRP, sensor) for the chosen district and dates, download as CSV, or everything in one ZIP with a data dictionary and citation file; every chart exports as PNG.
 
 ---
 
@@ -71,12 +71,16 @@ The NASA LP DAAC distributes all three products.
 - **Recent divergence.** Since 2024 VIIRS records far fewer Punjab hotspots than Aqua MODIS (Nov 2025: 487 vs 4,288 pixel-days, against near-equal counts before 2023). Aqua's orbit has drifted to a later afternoon overpass (about 15:30 by mid-2026) while burning has moved later in the day, so Aqua now catches fires VIIRS's 13:30 pass misses; a rolling recalibration did not fix it. FireLens therefore stops blending drifted MODIS. The decline after 2023 may still be partly a detection effect.
 - **Manual refresh.** New months arrive by re-running the Earth Engine export scripts; there is no automatic near-real-time feed yet. A month still in progress is shown in the calendar but left out of the metric cards until it has at least half its daily images.
 - VIIRS is used at 1 km (VNP14A1) so all sensors share one grid; the 375 m VIIRS detail is not used.
+- **The anchor sensor is ending.** A NASA Earthdata notice says delivery of Suomi-NPP products stops on 1 November 2026 and points users to NOAA-20 and NOAA-21; continuing the record needs those sensors.
+- **Fire type covers 19 of 49 districts**, because the land-cover hotspot export sampled two rectangles; the rest are left blank, not estimated.
+- **Trends are trends in detections.** In the harmonized record 18 of the 36 Punjab and Haryana districts show a significant Oct–Nov decline since 2016, and none of the 13 Uttarakhand districts a significant Apr–May trend; but the decline falls in the years when burning appears to have moved later in the day, so part of it may be a detection effect.
 
 ---
 
 ## Next steps
 
-- Add NOAA-20 and NOAA-21 VIIRS to extend the record forward
+- Add NOAA-20 and NOAA-21 VIIRS to continue the record after Suomi-NPP
+- Extend the fire-type export to all 49 districts and remove static heat sources from the calendar
 - Replace GAUL boundaries with official Survey of India district shapefiles
 - Extend the calendar back to 2001 (Terra) and 2003 (Aqua) with the 2016–2026 calibration
 - Add a human-activity context panel (crop calendars, air-quality index)
