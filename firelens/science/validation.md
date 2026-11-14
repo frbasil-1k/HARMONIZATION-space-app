@@ -132,6 +132,15 @@ Where each value comes from (`source`):
 | modis_fill_drift | 49 | 0.8% |
 | none | 49 | 0.8% |
 
+Uncertainty columns (`sensor_min`, `sensor_max`, `n_blended`, `clear_coverage`): the range
+of the three sensors after scaling is the app's uncertainty band. Half of that range, as a
+share of the harmonized value (median over district-months with at least two sensors):
+**±27%** in the burning months (each district's top 10% of months)
+before the drift, **±79%** over all months (quiet months have few
+detections, so sensors disagree more in relative terms), and **±38%**
+in burning months after the drift. It is a measure of sensor disagreement, not a confidence
+interval.
+
 Peak preservation:
 
 - Ludhiana (Punjab), Oct–Nov paddy peak: season mean **0.003693** vs annual mean **0.000851** → **4.34×**
@@ -139,7 +148,7 @@ Peak preservation:
 
 Assertions enforced by the script: `0 <= act_harmonized <= 1`; `n_valid_sensors` in 0–3;
 `act_harmonized` is `NaN` exactly where `source == "none"`; a month VIIRS saw is never filled
-from MODIS. All passed.
+from MODIS; `n_blended >= 1` exactly where a value exists; `sensor_min <= sensor_max`. All passed.
 
 ## 6. Notes and limitations
 

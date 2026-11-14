@@ -466,6 +466,14 @@ def _print_evaluation(res: dict) -> None:
 SOURCES = ("blend", "viirs", "modis_fill", "modis_fill_drift", "none")
 
 
+def _half_range(rows: pd.DataFrame) -> float:
+    """Median of (sensor_max - sensor_min) / 2 as a share of the harmonized value."""
+    rows = rows[(rows["act_harmonized"] > 0) & (rows["n_valid_sensors"] >= 2)]
+    if rows.empty:
+        return float("nan")
+    return float((((rows["sensor_max"] - rows["sensor_min"]) / 2) / rows["act_harmonized"]).median())
+
+
 def build_harmonized(df: pd.DataFrame, ratios: pd.DataFrame, weights: dict[str, float]
                      ) -> tuple[pd.DataFrame, dict[str, float]]:
     """One harmonized row per district-month, and summary statistics."""
@@ -484,15 +492,25 @@ def build_harmonized(df: pd.DataFrame, ratios: pd.DataFrame, weights: dict[str, 
     num = np.where(has_viirs, viirs, 0.0)
     den = has_viirs.astype(float)
     contributed = np.zeros(len(out), dtype=bool)
+    blended_in: dict[str, np.ndarray] = {}
     for sensor in MODELS:
         values = out[SCALED[sensor]].to_numpy(dtype=float)
         ok = has_viirs & pre[sensor] & np.isfinite(values)
         num += np.where(ok, weights[sensor] * values, 0.0)
         den += np.where(ok, weights[sensor], 0.0)
         contributed |= ok
+        blended_in[sensor] = ok
     blended = np.where(has_viirs, num / np.where(den > 0, den, 1.0), np.nan)
     fill_pre = weighted_modis(out, weights, pre)
     fill_post = weighted_modis(out, weights, post)
+
+    # Which sensors the value rests on (for n_blended and clear_coverage below).
+    use_pre = ~has_viirs & np.isfinite(fill_pre)
+    use_post = ~has_viirs & ~np.isfinite(fill_pre) & np.isfinite(fill_post)
+    used = {ANCHOR: has_viirs}
+    for sensor in MODELS:
+        finite = np.isfinite(out[SCALED[sensor]].to_numpy(dtype=float))
+        used[sensor] = blended_in[sensor] | (use_pre & pre[sensor] & finite) | (use_post & post[sensor] & finite)
 
     act = np.where(has_viirs, blended, np.where(np.isfinite(fill_pre), fill_pre, fill_post))
     source = np.select(
@@ -508,6 +526,21 @@ def build_harmonized(df: pd.DataFrame, ratios: pd.DataFrame, weights: dict[str, 
     out["n_valid_sensors"] = out[sensor_columns].notna().sum(axis=1).astype("int64")
     out["low_coverage"] = out["n_valid_sensors"] == 0
 
+    # Uncertainty columns. sensor_min/max: the range of the individual sensors after
+    # scaling (how far the satellites disagree; after the drift it widens, as it should).
+    # n_blended: sensors the value rests on. clear_coverage: the best clear view among them.
+    out["sensor_min"] = out[sensor_columns].min(axis=1, skipna=True)
+    out["sensor_max"] = out[sensor_columns].max(axis=1, skipna=True)
+    out["n_blended"] = sum(used[s].astype("int64") for s in SENSORS)
+    coverage = (df[df["year"].between(*FULL_YEARS)]
+                .pivot(index=INDEX, columns="sensor", values="clear_coverage").reset_index())
+    coverage = out[INDEX].merge(coverage, on=INDEX, how="left")
+    best = np.full(len(out), np.nan)
+    for sensor in SENSORS:
+        values = np.where(used[sensor], coverage[sensor].to_numpy(dtype=float), np.nan)
+        best = np.fmax(best, values)
+    out["clear_coverage"] = np.clip(best, 0.0, 1.0)
+
     group = out.groupby(["state", "district"], observed=True)["act_harmonized"]
     out["baseline"] = out.groupby(["state", "district", "month"], observed=True)["act_harmonized"].transform("mean")
     out["anomaly"] = out["act_harmonized"] - out["baseline"]
@@ -515,7 +548,7 @@ def build_harmonized(df: pd.DataFrame, ratios: pd.DataFrame, weights: dict[str, 
 
     columns = INDEX + ["viirs_act", "terra_scaled", "aqua_scaled", "act_harmonized", "n_valid_sensors",
                        "low_coverage", "baseline", "anomaly", "percentile", "source", "modis_recon",
-                       "modis_drift"]
+                       "modis_drift", "sensor_min", "sensor_max", "n_blended", "clear_coverage"]
     out = out[columns].sort_values(INDEX, kind="mergesort").reset_index(drop=True)
 
     valid = out["act_harmonized"].dropna()
@@ -529,6 +562,9 @@ def build_harmonized(df: pd.DataFrame, ratios: pd.DataFrame, weights: dict[str, 
         "max_act": float(valid.max()) if len(valid) else np.nan,
         "mean_act": float(valid.mean()) if len(valid) else np.nan,
         "sources": out["source"].value_counts().reindex(SOURCES, fill_value=0).to_dict(),
+        "half_range_all": _half_range(out[~out["modis_drift"]]),
+        "half_range_burning": _half_range(out[~out["modis_drift"] & (out["percentile"] >= 90)]),
+        "half_range_burning_drift": _half_range(out[out["modis_drift"] & (out["percentile"] >= 90)]),
         "low_coverage_rows": int(out["low_coverage"].sum()),
     }
     return out, summary
@@ -561,6 +597,13 @@ def verify(harmonized: pd.DataFrame) -> dict[str, dict[str, float]]:
     has_viirs = harmonized["viirs_act"].notna()
     assert harmonized.loc[has_viirs, "source"].isin(["blend", "viirs"]).all(), \
         "a month VIIRS saw must never be filled from MODIS"
+    valid_rows = harmonized["act_harmonized"].notna()
+    assert (harmonized.loc[valid_rows, "n_blended"] >= 1).all() and (harmonized.loc[~valid_rows, "n_blended"] == 0).all(), \
+        "n_blended must be >= 1 exactly where act_harmonized is defined"
+    assert (harmonized.loc[valid_rows, "sensor_min"] <= harmonized.loc[valid_rows, "sensor_max"]).all(), \
+        "sensor_min must not exceed sensor_max"
+    assert harmonized.loc[valid_rows, "clear_coverage"].between(COVERAGE_THRESHOLD, 1.0).all(), \
+        "clear_coverage of a used sensor must be within [floor, 1]"
 
     ludhiana = _season_stats(harmonized, "Punjab", "Ludhiana", (10, 11))
     naini_tal = _season_stats(harmonized, "Uttarakhand", "Naini Tal", (4, 5))
@@ -742,6 +785,15 @@ Where each value comes from (`source`):
 
 {_md_table(["Source", "Rows", "Share"], src_rows)}
 
+Uncertainty columns (`sensor_min`, `sensor_max`, `n_blended`, `clear_coverage`): the range
+of the three sensors after scaling is the app's uncertainty band. Half of that range, as a
+share of the harmonized value (median over district-months with at least two sensors):
+**±{summary['half_range_burning']:.0%}** in the burning months (each district's top 10% of months)
+before the drift, **±{summary['half_range_all']:.0%}** over all months (quiet months have few
+detections, so sensors disagree more in relative terms), and **±{summary['half_range_burning_drift']:.0%}**
+in burning months after the drift. It is a measure of sensor disagreement, not a confidence
+interval.
+
 Peak preservation:
 
 {peak_block(peaks['ludhiana'], 'Ludhiana (Punjab), Oct–Nov paddy peak')}
@@ -749,7 +801,7 @@ Peak preservation:
 
 Assertions enforced by the script: `0 <= act_harmonized <= 1`; `n_valid_sensors` in 0–3;
 `act_harmonized` is `NaN` exactly where `source == "none"`; a month VIIRS saw is never filled
-from MODIS. All passed.
+from MODIS; `n_blended >= 1` exactly where a value exists; `sensor_min <= sensor_max`. All passed.
 
 ## 6. Notes and limitations
 
