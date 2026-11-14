@@ -1,0 +1,5 @@
+.env
+*.json.key
+credentials*
+*.ipynb_checkpoints
+data/raw/
