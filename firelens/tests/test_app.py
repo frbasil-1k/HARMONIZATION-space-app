@@ -191,3 +191,25 @@ def test_maps_refit_once_sized():
         script = generate_leaflet_string(m)
         assert "var map = map_div;" in script and "invalidateSize" in script
         assert "window.addEventListener(\"resize\", refit)" in script
+
+
+def test_quick_date_ranges_move_the_slider():
+    app = run(state="Punjab", district="Ludhiana")
+    pills = next(p for p in app.get("button_group") if p.label == "Quick ranges")
+    pills.set_value("Before MODIS drift").run()
+    assert not app.exception
+    assert app.session_state["dates"] == ((2016, 1), (2022, 9))
+    assert app.session_state["date_preset"] is None  # cleared, so it can be picked again
+    pills = next(p for p in app.get("button_group") if p.label == "Quick ranges")
+    pills.set_value("Last 5 years").run()
+    assert app.session_state["dates"] == ((2022, 1), (2026, 12))
+
+
+def test_researcher_navigation():
+    """A guide at the top, the map before the district tabs, and every long note one click away."""
+    app = run(state="Punjab", district="Ludhiana")
+    labels = [e.label for e in app.expander]
+    assert labels[0].startswith("New here?")
+    assert labels.count("About this view") >= 5  # calendar, yearly, anomaly, trend, fire type, ...
+    headers = [h.value for h in app.subheader]
+    assert headers.index("Map: all 49 districts") < headers.index("Ludhiana, Punjab")

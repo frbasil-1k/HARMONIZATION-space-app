@@ -21,7 +21,8 @@ If the raw counts are combined, burning appears to change whenever a satellite i
 
 - **Harmonized series:** one MODIS + VIIRS record per district, on the VIIRS scale; each sensor is also available on its own
 - **Burning calendar:** a month × year heatmap per district (2016–2026), with a colour-blind-safe colour scale, coloured by activity or by hotspot count
-- **Date range:** limit every view, metric and download to any span of months
+- **Date range:** limit every view, metric and download to any span of months, or pick a quick range (all years, last 5 years, or before the MODIS orbit drift)
+- **Easy to find your way:** a 4-step guide at the top, the district map right under the headline cards, and every view with a one-line summary and an "About this view" panel holding the full method
 - **This month vs history:** the latest month with at least half its daily images, compared with the median of the same month across the selected years, plus its percentile rank (a month still in progress is named, and shown in the calendar)
 - **Peak season:** the months with the highest typical activity
 - **Region-wide context:** when most districts are far from normal in the same month (as in Oct 2026, when nearly every district was below half its usual October), the app says so under the cards and sets it beside the official farm-fire counts, so a very low number reads as a region-wide fall, not a data gap
