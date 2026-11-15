@@ -6,9 +6,11 @@ context a fire scientist asks for next: was it cropland or forest, and how much 
 signal is not vegetation fire at all (refinery flares, furnaces and other fixed heat
 sources that a thermal sensor also reports as hotspots).
 
-Input (not committed, see gee/export_hotspots_context.js and gee/README.md):
+Input (not committed, see gee/README.md steps 10-11):
     data/raw/firepulse_india_all.csv, or a folder holding the yearly FirePulse_India_*.csv
-    exports — one row per hotspot pixel per day per satellite,
+    exports (gee/export_hotspots_context.js, two rectangles), or a folder holding the
+    fl_ctx_<sensor>_<year>.csv exports of gee/export_fire_context.js (all 49 districts;
+    pass --full-coverage) — one row per hotspot pixel per day per satellite,
     from the same three products as the calendar (MOD14A1, MYD14A1, VNP14A1, native
     ~1 km grid), each with the MODIS land-cover class of that year (MCD12Q1 LC_Type1,
     IGBP) and the VIIRS night-light radiance of that month.
@@ -16,9 +18,10 @@ Input (not committed, see gee/export_hotspots_context.js and gee/README.md):
 Rules (docs/decisions.md, docs/data-contract.md §8-9):
 * Same fire rule as the calendar: nominal or high confidence only (FireMask >= 8).
 * Counts are hotspot pixel-days per sensor. Sensors are never added together.
-* The hotspot export covers two rectangles, not whole states. A district is reported
+* The FirePulse export covers two rectangles, not whole states. A district is reported
   only when at least 95 % of its area lies inside them; the others are left out, not
-  estimated.
+  estimated. The district export (export_fire_context.js) covers every district:
+  --full-coverage reports all 49.
 * A static source is a 1 km pixel with hotspots in at least 8 of the 12 calendar months
   and in at least 12 different months of the record (all sensors pooled, used only to
   locate the pixel). Crop and
@@ -37,12 +40,14 @@ Usage:
     python science/fire_types.py
     python science/fire_types.py --input data/raw/firepulse      # a folder of yearly CSVs
     python science/fire_types.py --input data/raw/firepulse_india_all.csv
+    python science/fire_types.py --input data/raw/fire_context --full-coverage   # all 49
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import date
 from pathlib import Path
 
@@ -170,11 +175,22 @@ def assign_districts(lon: np.ndarray, lat: np.ndarray, geo: dict) -> tuple[np.nd
 # --------------------------------------------------------------------------------------
 
 
+COPY_SUFFIX = re.compile(r"\s*\(\d+\)$")  # "fl_ctx_aqua_2020 (1).csv": a second download
+
+
+def unique_files(files: list[Path]) -> list[Path]:
+    """Drop repeat downloads ("name (1).csv") whose original is also present, so no
+    hotspot is counted twice."""
+    names = {f.stem for f in files}
+    return [f for f in files
+            if not (COPY_SUFFIX.search(f.stem) and COPY_SUFFIX.sub("", f.stem) in names)]
+
+
 def load_hotspots(path: Path) -> pd.DataFrame:
     """Hotspot pixel-days of the three calendar sensors, FireMask >= 8, 2016 onwards."""
     columns = ["satellite", "acq_date", "latitude", "longitude", "confidence", "daynight",
                "land_cover_code", "nightlight_rad"]
-    files = sorted(path.glob("*.csv")) if path.is_dir() else [path] if path.is_file() else []
+    files = unique_files(sorted(path.glob("*.csv"))) if path.is_dir() else [path] if path.is_file() else []
     if not files:
         raise FileNotFoundError(f"{path} not found. See gee/README.md (fire-type context export).")
     df = pd.concat((pd.read_csv(f, usecols=columns, dtype={"acq_date": str}) for f in files),

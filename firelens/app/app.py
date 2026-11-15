@@ -61,6 +61,8 @@ HARMONIZED_NOTE = (
     "well each sensor predicted VIIRS in unseen years. From Oct 2022 the MODIS orbits drift "
     "(Terra earlier, Aqua later in the day), so from then on the value is VIIRS wherever VIIRS "
     "saw the district; a ◦ marks a month filled from drifted MODIS (lower confidence). "
+    "NOAA ended Suomi-NPP data delivery on 2 Nov 2026, so from November 2026 every value is "
+    "drifted-MODIS fill (◦) until VIIRS on NOAA-20/21 takes over as the anchor. "
     "Method and validation: science/validation.md."
 )
 DRIFT_NOTE = "Shaded: MODIS orbit drift (from Oct 2022). Scaled MODIS is shown for comparison only."
@@ -74,17 +76,24 @@ RANGE_NOTE = (
     "Grey band / error bars: the range of the three sensors after scaling, a measure of how "
     "far the satellites disagree (not a confidence interval)."
 )
+TREND_METHOD = (
+    "a year counts only when every month of the season was observed with at least half its "
+    "daily images. Trend test: Mann-Kendall (two-sided, exact for untied data); slope: Sen's "
+    "median slope, also given as a percentage of the median season. A test needs at least "
+    f"{trends.MIN_TREND_YEARS} seasons."
+)
 TREND_NOTE = (
-    "Each point is the mean monthly activity of that season; a year counts only when every "
-    "month of the season was observed with at least half its daily images. Trend test: "
-    "Mann-Kendall (two-sided, exact for untied data); slope: Sen's median slope, also given "
-    f"as a percentage of the median season. A test needs at least {trends.MIN_TREND_YEARS} seasons. "
-    "With 49 districts tested at p < 0.05, two or three can look significant by chance."
+    "Each point is the mean monthly activity of that season; " + TREND_METHOD +
+    " With 49 districts tested at p < 0.05, two or three can look significant by chance."
+)
+AREA_TREND_NOTE = (
+    "Each point is the mean monthly hotspot pixel-days of that season, for the satellite "
+    "chosen above (not harmonized); " + TREND_METHOD
 )
 TREND_DRIFT_NOTE = (
     "Caution: seasons from 2023 on fall in the period when the MODIS orbits drifted and burning "
     "appears to have moved later in the day, past the early-afternoon overpass. Part of a decline "
-    "may be a detection effect, not less burning. Compare the single sensors (Series) before "
+    "may be a detection effect, not less burning. Compare the single sensors ({where}) before "
     "drawing conclusions."
 )
 FIRE_TYPE_NOTE = (
@@ -147,6 +156,16 @@ SENSOR_LABELS = {
 }
 HARMONIZED = "harmonized"
 ANCHOR_SENSOR = "viirs_snpp"  # docs/decisions.md: the reference series
+SNPP_LAST = (2026, 11)  # NOAA ended Suomi-NPP data delivery on 2 Nov 2026 (2 images that month)
+# Opening view: a major rice-residue district with every view filled (fire type, static
+# sources, a significant Oct-Nov trend). Used only if the data has it (not with mock data).
+DEFAULT_PLACE = ("Punjab", "Ludhiana")
+LOW_RATIO, HIGH_RATIO = 0.5, 2.0  # region-wide context: below half / above twice the median
+# Official farm-fire counts, for context beside the satellite numbers (CAQM, 2 Dec 2025).
+CAQM_NOTE = ("Official farm-fire counts (also from satellites) agree: Punjab's 2025 rice-residue "
+             "season had 5,114 fires, 93% fewer than in 2021 (Commission for Air Quality "
+             "Management, Dec 2025). Part of the fall may be burning moved past the "
+             "early-afternoon overpasses; see the Trend tab.")
 SERIES_LABELS = {HARMONIZED: "Harmonized (MODIS + VIIRS)", **SENSOR_LABELS}
 MONTH_KEYS = ["state", "district", "year", "month"]
 ALL_MONTHS = [(y, m) for y in YEARS for m in MONTHS]
@@ -158,6 +177,33 @@ SENSOR_LINES = {  # Okabe-Ito colours plus dash styles, so lines differ without 
     "terra": dict(color="#E69F00", width=2, dash="dash"),
     "aqua": dict(color="#009E73", width=2, dash="dot"),
 }
+
+
+def data_version() -> tuple:
+    """Name, size and modification time of every data file the app reads."""
+    files = sorted(p for p in DATA_DIR.iterdir() if p.is_file()) if DATA_DIR.is_dir() else []
+    return tuple((p.name, p.stat().st_size, p.stat().st_mtime_ns) for p in files)
+
+
+@st.cache_resource
+def seen_data_version() -> dict:
+    """Process-wide memory of the data version the cached tables were read from."""
+    return {}
+
+
+def refresh_cache_on_new_data() -> None:
+    """Drop cached tables when a data file changes.
+
+    Streamlit Community Cloud pulls each new commit and reloads the code without restarting
+    the process, and st.cache_data keys on the function and its arguments (a path), not on
+    the file's contents. A pushed data file would therefore keep being served from the old
+    cache: the deployed app showed the v1 harmonized numbers a day after v2 was merged.
+    Clearing on the first run of each process also removes anything cached by older code.
+    """
+    seen, version = seen_data_version(), data_version()
+    if seen.get("version") != version:
+        st.cache_data.clear()
+        seen["version"] = version
 
 
 @st.cache_data
@@ -633,7 +679,7 @@ def render_trend(df: pd.DataFrame, series: pd.DataFrame, state: str, sensor: str
     else:
         trend_cards(result)
         if result["last_year"] >= 2023:
-            st.warning(TREND_DRIFT_NOTE)
+            st.warning(TREND_DRIFT_NOTE.format(where="the Series selector in the sidebar"))
     st.caption(TREND_NOTE + (" " + RANGE_NOTE if extra else ""))
     st.download_button(
         "Download trend table (all districts) CSV",
@@ -829,10 +875,17 @@ def skipped_note(series: pd.DataFrame, latest: pd.Series) -> str | None:
     if newer.empty:
         return None
     row = newer.iloc[-1]
+    ended = (int(row["year"]), int(row["month"])) >= SNPP_LAST
+    if ended and row["sensor"] == ANCHOR_SENSOR:
+        return (f"Suomi-NPP data ended on 2 Nov 2026 (NOAA), so "
+                f"{month_label(int(row['year']), int(row['month']))} has only "
+                f"{int(row['n_images'])} daily images and the cards use the last full month.")
     return (f"{month_label(int(row['year']), int(row['month']))} is still in progress "
             f"({'at most ' if row['sensor'] == HARMONIZED else ''}{int(row['n_images'])} of "
             f"{days_in(row)} daily images so far), so the cards compare the latest month with "
-            f"at least half its images.")
+            f"at least half its images."
+            + (" Suomi-NPP data ended on 2 Nov 2026, so from November the harmonized value is "
+               "drifted MODIS only (◦)." if ended and row["sensor"] == HARMONIZED else ""))
 
 
 def ordinal(n: float) -> str:
@@ -909,6 +962,41 @@ def render_metrics(series: pd.DataFrame, grid: pd.DataFrame) -> pd.Series | None
     if skipped:
         st.caption(skipped)
     return latest
+
+
+def region_context(df: pd.DataFrame, sensor: str, latest: pd.Series | None,
+                   start: tuple[int, int], end: tuple[int, int]) -> str | None:
+    """One sentence placing the headline month in the whole region, when most districts
+    agree (e.g. Oct 2026 far below normal almost everywhere), so a very low headline in
+    one district reads as what it is: a region-wide fall, not a data gap."""
+    if latest is None:
+        return None
+    year, month = int(latest["year"]), int(latest["month"])
+    rows = df[(df["sensor"] == sensor) & (df["month"] == month) & in_dates(df, start, end)]
+    ratios = []
+    for _, place in rows.groupby(["state", "district"]):
+        now = place.loc[place["year"] == year, "activity"].dropna()
+        if not now.empty:
+            ratio = anomaly_ratio(float(now.iloc[0]), place["activity"].dropna())
+            if ratio is not None:
+                ratios.append(ratio)
+    if not ratios:
+        return None
+    label, usual = month_label(year, month), calendar.month_name[month]
+    low = sum(r < LOW_RATIO for r in ratios)
+    high = sum(r > HIGH_RATIO for r in ratios)
+    if low >= len(ratios) / 2:
+        count = f"all {low}" if low == len(ratios) else f"{low} of the {len(ratios)}"
+        text = (f"Region-wide: in {label}, {count} districts with a comparison were below half "
+                f"their usual {usual}, so a low value here is a region-wide fall, not missing data.")
+        if month in (10, 11) and year >= 2024:
+            text += " " + CAQM_NOTE
+        return text
+    if high >= len(ratios) / 2:
+        count = f"all {high}" if high == len(ratios) else f"{high} of the {len(ratios)}"
+        return (f"Region-wide: in {label}, {count} districts with a comparison were above "
+                f"twice their usual {usual}.")
+    return None
 
 
 # --- Download -------------------------------------------------------------------
@@ -1419,11 +1507,11 @@ def render_area_trend(series: pd.DataFrame, sensor: str, title: str) -> None:
     else:
         trend_cards(result, unit="hotspot pixel-days per month")
         if result["last_year"] >= 2023:
-            st.warning(TREND_DRIFT_NOTE)
+            st.warning(TREND_DRIFT_NOTE.format(where="the Satellite choice above"))
         if sensor != ANCHOR_SENSOR:
             st.caption("A trend in one MODIS sensor's raw counts also carries its orbit drift after "
                        "2022; Suomi-NPP VIIRS is the steadier choice for trends.")
-    st.caption(TREND_NOTE)
+    st.caption(AREA_TREND_NOTE)
 
 
 def render_area_page(df: pd.DataFrame, geo_path: Path, start: tuple[int, int], end: tuple[int, int]) -> None:
@@ -1516,6 +1604,7 @@ def render_area_page(df: pd.DataFrame, geo_path: Path, start: tuple[int, int], e
 
 def main() -> None:
     st.set_page_config(page_title="FireLens", layout="wide")
+    refresh_cache_on_new_data()
     st.title("FireLens")
     st.caption("Harmonized burning-activity calendar for Northern India, 2016–2026, "
                "from MODIS and VIIRS satellite hotspot detections.")
@@ -1536,6 +1625,8 @@ def main() -> None:
     pick = st.session_state.pop("pending_pick", None)
     if pick:
         st.session_state["state"], st.session_state["district"] = pick
+    elif "state" not in st.session_state and DEFAULT_PLACE in set(zip(df["state"], df["district"])):
+        st.session_state["state"], st.session_state["district"] = DEFAULT_PLACE
 
     with st.sidebar:
         st.header("Location")
@@ -1583,6 +1674,9 @@ def main() -> None:
     scaled = district_harmonized(harmonized, state, district, start, end)
 
     latest = render_metrics(series, grid)
+    context = region_context(df, sensor, latest, start, end)
+    if context:
+        st.info(context)
     calendar_tab, yearly_tab, anomaly_tab, trend_tab, types_tab, sensors_tab = st.tabs(
         ["Calendar", "Yearly", "Anomaly", "Trend", "Fire type", "Sensor comparison"])
     with calendar_tab:

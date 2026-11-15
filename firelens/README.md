@@ -6,7 +6,7 @@ Built for the NASA Space Apps Challenge 2026, challenge: *Harmonization of MODIS
 
 FireLens turns satellite fire detections from NASA's MODIS and VIIRS sensors into one consistent month-by-year calendar for any district in Northern India. Users can see when burning peaks, compare the current month with its historical median, and download the data.
 
-**Live app:** add Streamlit link here · **Demo:** add video/slides link here
+**Live app:** [harmonization-space-app-alvgdbyul5te9zfje6c3fz.streamlit.app](https://harmonization-space-app-alvgdbyul5te9zfje6c3fz.streamlit.app/) · **Demo:** add video/slides link here
 
 ## The problem
 
@@ -24,6 +24,7 @@ If the raw counts are combined, burning appears to change whenever a satellite i
 - **Date range:** limit every view, metric and download to any span of months
 - **This month vs history:** the latest month with at least half its daily images, compared with the median of the same month across the selected years, plus its percentile rank (a month still in progress is named, and shown in the calendar)
 - **Peak season:** the months with the highest typical activity
+- **Region-wide context:** when most districts are far from normal in the same month (as in Oct 2026, when nearly every district was below half its usual October), the app says so under the cards and sets it beside the official farm-fire counts, so a very low number reads as a region-wide fall, not a data gap
 - **Yearly view:** mean monthly activity per year, to compare years
 - **Anomaly view:** each month's difference from the median of the same calendar month
 - **Trend:** per season (Oct–Nov, Apr–May or the whole year), a Mann-Kendall test and Sen's slope for the district, a trend map of all 49 districts, and a caution where a trend crosses the 2022–23 detection shift
@@ -116,8 +117,8 @@ The tests check the trend maths against scipy, the data files against the contra
 - Hotspots are satellite detections, not confirmed individual fires. One fire can produce many detections, and fires that are small, short-lived or under cloud may be missed.
 - District boundaries come from FAO GAUL and are not official boundaries of India. They are used for orientation only.
 - The most recent months depend on when NASA publishes the data in Google Earth Engine.
-- NOAA-20 and NOAA-21 VIIRS are not yet part of the calendar. This now matters: a NASA Earthdata notice says delivery of Suomi-NPP products ends on 1 November 2026 and points users to NOAA-20 and NOAA-21, so the anchor record stops there (the file has 2 VIIRS images for November 2026). Check the current notice before quoting it.
-- Fire type and static sources cover 19 of the 49 districts, because the land-cover hotspot export sampled two rectangles rather than whole states. The calendar still includes the static sources (0.09% of VIIRS detections in the burning seasons, 3.5% outside them).
+- NOAA-20 and NOAA-21 VIIRS are not yet part of the calendar. This now matters: NOAA ended delivery of Suomi-NPP data on 2 November 2026 (NASA's earlier notice said 1 November) and points users to NOAA-20 and NOAA-21, so the anchor record stops there (the file has 2 VIIRS images for November 2026). From November 2026 the harmonized value is drifted-MODIS fill, marked ◦, and the app says so.
+- Fire type and static sources cover 19 of the 49 districts, because the land-cover hotspot export sampled two rectangles rather than whole states. The export over all 49 districts is ready (`gee/export_fire_context.js`, `gee/README.md` steps 10b–11b) and needs one Earth Engine run. The calendar still includes the static sources (0.09% of VIIRS detections in the burning seasons, 3.5% outside them).
 - A trend is a statement about detections. Seasons from 2023 on fall in the period when burning appears to have moved later in the day, so a decline may be partly a detection effect; the app says so next to every such trend. With 49 districts tested at p < 0.05, two or three can look significant by chance.
 - The sensor range is a measure of how far the satellites disagree, not a confidence interval.
 - The calendar covers 2016–2026, the decade in which all three sensors overlap, not yet the early 2000s.
@@ -130,7 +131,7 @@ The tests check the trend maths against scipy, the data files against the contra
 ## Next steps
 
 - Add NOAA-20 and NOAA-21 VIIRS, normalized for their extra overpasses, so the record continues after Suomi-NPP
-- Re-run the land-cover hotspot export over the district boundaries, so fire type covers all 49 districts, then remove static sources from the calendar itself
+- Run `gee/export_fire_context.js` (33 Earth Engine tasks) and `science/fire_types.py --full-coverage`, so fire type covers all 49 districts, then remove static sources from the calendar itself
 - Extend the calendar back to 2001 (Terra) and 2003 (Aqua) using MODIS and the 2016–2026 calibration
 - Use the VIIRS 375 m (VNP14IMG / FIRMS) detections for the hotspot list and counts
 - Model the post-drift MODIS overpass time explicitly, so drifted MODIS can be used again

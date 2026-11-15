@@ -7,7 +7,7 @@
 
 ## App Under Test
 
-- **Live URL:** _(waiting for Mubeen to paste deployed share.streamlit.io link, or run locally: `streamlit run app/app.py`)_
+- **Live URL:** https://harmonization-space-app-alvgdbyul5te9zfje6c3fz.streamlit.app/ (or run locally: `streamlit run app/app.py`)
 - **Tested at:** 23:30 IST (Nov 14, 2026)
 - **Tester:** Mohammed Zaidan Contractor (R4)
 

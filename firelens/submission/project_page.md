@@ -56,7 +56,7 @@ The NASA LP DAAC distributes all three products.
 1. **Collect** — For each of 49 districts in Punjab, Haryana and Uttarakhand, each month from January 2016, we count how many 1 km pixels were flagged as burning, and how many pixels had a clear view that month.
 2. **Normalize** — Burning activity = fire pixels ÷ clear-view pixels. This removes the cloud-cover bias that makes monsoon months look fire-free when they are simply unobserved.
 3. **Harmonize** — VIIRS Suomi-NPP is our reference sensor: it covers the whole period and is the sensor that continues the record. MODIS Terra and Aqua are scaled to it with one ratio per state and calendar month (VIIRS ÷ MODIS over 2016–2022), because Terra's morning overpass misses much more of the afternoon crop burning in Oct–Nov than in quiet months. The harmonized value blends VIIRS with the scaled MODIS sensors, weighted by how well each predicted VIIRS in unseen years, using MODIS only from before its orbit drifted (Terra Oct 2022, Aqua Feb 2023). Tested leave-one-year-out on 2016–2022, scaled Terra agrees with VIIRS at r = 0.91 and Aqua at r = 0.98, both within 4% of VIIRS's peak-season total; MODIS alone rebuilds the VIIRS calendar at r = 0.97 with a 2% bias, the evidence that the record can be extended back to 2001. The seasonal peaks survive: Ludhiana's Oct–Nov paddy burning is 4.3× its yearly average, Naini Tal's Apr–May forest fires 3.9×.
-4. **Display** — A Streamlit app lets any user pick a district (or search by latitude/longitude), a date range, and the harmonized series or any single sensor, then see a month × year calendar, yearly averages, anomalies against the monthly median, a seasonal trend test (Mann-Kendall with Sen's slope, per district and as a map) and a sensor comparison. Every harmonized value shows the range of the three sensors and how many it rests on. Users can also draw any box or polygon on the map and get its own calendar, anomalies and trend from the hotspots inside it. For 19 districts a fire-type view splits detections into cropland, forest and woodland, and flags fixed heat sources such as flares. Metric cards show how the latest month with at least half its daily images compares to its historical median and percentile. The harmonized and per-sensor monthly data, and the list of individual hotspot detections (date, location, FRP, sensor) for the chosen district and dates, download as CSV, or everything in one ZIP with a data dictionary and citation file; every chart exports as PNG.
+4. **Display** — A Streamlit app lets any user pick a district (or search by latitude/longitude), a date range, and the harmonized series or any single sensor, then see a month × year calendar, yearly averages, anomalies against the monthly median, a seasonal trend test (Mann-Kendall with Sen's slope, per district and as a map) and a sensor comparison. Every harmonized value shows the range of the three sensors and how many it rests on. Users can also draw any box or polygon on the map and get its own calendar, anomalies and trend from the hotspots inside it. For 19 districts (all 49 once one more Earth Engine export is run) a fire-type view splits detections into cropland, forest and woodland, and flags fixed heat sources such as flares. Metric cards show how the latest month with at least half its daily images compares to its historical median and percentile. The harmonized and per-sensor monthly data, and the list of individual hotspot detections (date, location, FRP, sensor) for the chosen district and dates, download as CSV, or everything in one ZIP with a data dictionary and citation file; every chart exports as PNG.
 
 ---
 
@@ -101,7 +101,7 @@ The NASA LP DAAC distributes all three products.
 
 ## Links
 
-- **Live app:** _(waiting for R3 / Mohammed Mubeen to deploy)_
+- **Live app:** https://harmonization-space-app-alvgdbyul5te9zfje6c3fz.streamlit.app/
 - **Demo video / slides:** _(add link once recorded — will be uploaded to Drive `slides/` or `video/`)_
 - **GitHub repo:** https://github.com/frbasil-1k/HARMONIZATION-space-app
 - **Drive folder (public):** https://drive.google.com/drive/folders/10Ux8snPZ6pcc6l9GhDaxWkgh4WRp14Ag?usp=sharing
@@ -110,7 +110,7 @@ The NASA LP DAAC distributes all three products.
 
 > **TODO before submission:**
 > - [ ] Confirm exact close time and required fields from Space Apps submission guide (R4)
-> - [ ] Add live app URL from R3 (Mohammed Mubeen)
+> - [x] Add live app URL (Streamlit Community Cloud, deployed by the team lead)
 > - [x] Confirm Oct–Nov peak wording matches R2's real Ludhiana plot (Mohammed Basil): confirmed, VIIRS peaks in November and harmonized Oct–Nov is 4.2× the yearly average
 > - [x] Add Drive folder public link (Done: https://drive.google.com/drive/folders/10Ux8snPZ6pcc6l9GhDaxWkgh4WRp14Ag?usp=sharing)
 > - [ ] Add demo video / slides link

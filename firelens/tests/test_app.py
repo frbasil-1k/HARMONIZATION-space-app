@@ -103,3 +103,44 @@ def test_hotspot_download_is_enabled():
     app = run(state="Punjab", district="Ludhiana", dates=((2020, 10), (2020, 11)))
     button = next(b for b in app.get("download_button") if b.proto.label == "Download hotspots CSV")
     assert not button.proto.disabled
+
+
+def test_changed_data_file_is_read_again(monkeypatch):
+    """A new commit of a data file must reach a running app (Streamlit Cloud reloads code
+    without restarting, and st.cache_data keys on the path, not the contents)."""
+    import os
+
+    reads = []
+    real_read_csv = pd.read_csv
+
+    def counting_read_csv(path, *args, **kwargs):
+        reads.append(str(path))
+        return real_read_csv(path, *args, **kwargs)
+
+    monkeypatch.setattr(pd, "read_csv", counting_read_csv)
+    app = run(state="Punjab", district="Ludhiana")
+    reads.clear()
+    app.run()
+    assert not any("district_harmonized" in r for r in reads)  # unchanged: served from cache
+    target = DATA / "district_harmonized.csv"
+    stat = target.stat()
+    try:
+        os.utime(target, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+        app.run()
+        assert not app.exception
+        assert any("district_harmonized" in r for r in reads)  # changed: read again
+    finally:
+        os.utime(target, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+
+
+def test_opening_view_and_region_context():
+    """First impression: Ludhiana, and the region-wide fall explained, not left to look broken."""
+    app = run()
+    assert (app.session_state["state"], app.session_state["district"]) == ("Punjab", "Ludhiana")
+    context = [i.value for i in app.info if i.value.startswith("Region-wide:")]
+    assert context and "Commission for Air Quality Management" in context[0]  # Oct 2026, Punjab
+
+
+def test_snpp_end_is_explained():
+    app = run(state="Punjab", district="Ludhiana", sensor="viirs_snpp")
+    assert any("Suomi-NPP data ended on 2 Nov 2026" in c.value for c in app.caption)

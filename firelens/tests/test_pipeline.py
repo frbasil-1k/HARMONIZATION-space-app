@@ -45,3 +45,12 @@ def test_fire_types_reproduces_committed_file(tmp_path, monkeypatch):
     assert fire_types.main(["--input", str(raw)]) == 0
     for name in ("district_fire_types.csv", "static_sources.csv"):
         pd.testing.assert_frame_equal(pd.read_csv(tmp_path / name), pd.read_csv(DATA / name))
+
+
+def test_fire_types_reads_a_repeat_download_once(tmp_path):
+    """Drive's "name (1).csv" copies must not double-count hotspots."""
+    names = ["fl_ctx_aqua_2020.csv", "fl_ctx_aqua_2020 (1).csv", "fl_ctx_aqua_2021 (1).csv"]
+    files = [tmp_path / n for n in names]
+    kept = [f.name for f in fire_types.unique_files(files)]
+    assert kept == ["fl_ctx_aqua_2020.csv", "fl_ctx_aqua_2021 (1).csv"]  # a lone copy is kept
+
