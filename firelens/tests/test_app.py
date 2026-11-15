@@ -144,3 +144,28 @@ def test_opening_view_and_region_context():
 def test_snpp_end_is_explained():
     app = run(state="Punjab", district="Ludhiana", sensor="viirs_snpp")
     assert any("Suomi-NPP data ended on 2 Nov 2026" in c.value for c in app.caption)
+
+
+@pytest.mark.parametrize("state,district,expect", [
+    ("Punjab", "Ludhiana", "Commission for Air Quality Management"),  # low, rice belt: note + CAQM
+    ("Uttarakhand", "Rudra Prayag", None),  # no October comparison: no note at all
+])
+def test_region_note_fits_the_district(state, district, expect):
+    app = run(state=state, district=district)
+    notes = [i.value for i in app.info if i.value.startswith("Region-wide:")]
+    if expect is None:
+        assert not notes
+    else:
+        assert notes and expect in notes[0]
+
+
+def test_region_note_names_punjab_counts_only_in_the_rice_belt():
+    """An Uttarakhand district below its usual October gets the note, not Punjab's count."""
+    for district in ("Dehra Dun", "Haridwar", "Udham Singh Nagar", "Naini Tal"):
+        app = run(state="Uttarakhand", district=district)
+        notes = [i.value for i in app.info if i.value.startswith("Region-wide:")]
+        if notes:
+            assert "Commission for Air Quality Management" not in notes[0]
+            return
+    pytest.skip("no Uttarakhand district below half its usual October in this data")
+
