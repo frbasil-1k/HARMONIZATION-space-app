@@ -87,6 +87,7 @@ NASA Earth Engine (Daily 2016–2026)
 - Month × year calendar (activity or hotspot count), yearly view, anomaly vs monthly median, sensor comparison before/after harmonization.
 - Metric cards: latest complete month vs its historical median, percentile rank, peak months.
 - Blank cells = no data (not zero).
+- Draw any box or polygon: its own calendar, anomaly and trend, plus a CSV of the hotspots inside it.
 - Research views: seasonal trend (Mann-Kendall + Sen's slope) per district and as a map; sensor-range uncertainty on every value; fire type (cropland / forest / woodland) and static heat sources for 19 districts.
 - Downloads: harmonized CSV, per-sensor CSV, individual hotspots CSV, trend table, everything as one ZIP with data dictionary and citation; every chart as PNG.
 - _Visual: 2–3 screenshots of the live Streamlit app — Ludhiana heatmap, metric cards, map_
@@ -111,7 +112,7 @@ NASA Earth Engine (Daily 2016–2026)
 - Manual refresh: data ends at the latest processed image
 
 **Next steps**
-- Back to 2001/2003 with MODIS · NOAA-20/21 VIIRS · Custom areas · Official boundaries · Near-real-time refresh
+- Back to 2001/2003 with MODIS · NOAA-20/21 VIIRS · Harmonized values for drawn areas · Official boundaries · Live FIRMS layer
 
 **Data credits**
 - MOD14A1 v6.1, MYD14A1 v6.1, VNP14A1 v2 — NASA LP DAAC via Google Earth Engine

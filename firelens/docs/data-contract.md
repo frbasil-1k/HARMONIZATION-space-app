@@ -268,6 +268,10 @@ These are views of §1 and §6, not new metrics, and depend on the dates the use
 - **Season value:** mean monthly `activity` over a season's months (Oct–Nov, Apr–May, or
   Jan–Dec); a year counts only when every month of the season has a defined activity and at
   least half its daily images.
+- **Drawn area:** hotspot pixel-days of one sensor per month inside a user's box or polygon,
+  counted from §7 (pixel centres, ray casting in `app/area.py`); months with no images in §1
+  are blank, months with images and no detections are 0. Counts are not harmonized and
+  sensors are never summed. Months, cards, anomaly and trend use the same rules as districts.
 - **Trend:** two-sided Mann-Kendall test on the season values in year order (exact p-value
   without ties, otherwise the tie-corrected normal approximation with continuity correction)
   and Sen's slope; at least 8 seasons; significance at p < 0.05. Implemented in
