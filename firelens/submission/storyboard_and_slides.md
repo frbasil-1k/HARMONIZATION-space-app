@@ -133,7 +133,7 @@ NASA Earth Engine (Daily 2016–2026)
 > **TODO before recording:**
 > - [ ] Confirm video ≤ 30 s and subtitle format from submission rules (R4)
 > - [x] Confirm which district shows clearest Oct–Nov peak: Ludhiana (4.2×)
-> - [ ] Get live app URL from R3 (Mohammed Mubeen) for recording
+> - [x] Live app URL for recording: https://harmonization-space-app-alvgdbyul5te9zfje6c3fz.streamlit.app/
 > - [x] Fill in sensor-agreement correlation value from R2's Plot 2 (r = 0.913)
 > - [x] Fill in Slide 6 insight once real data is available
 
