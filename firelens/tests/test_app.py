@@ -93,3 +93,13 @@ def test_downloads_and_citation_panel():
         assert expected in labels
     assert any("How to cite" in e.label for e in app.expander)
     assert any("10.5067/VIIRS/VNP14A1.002" in m.value for m in app.markdown)
+
+
+
+def test_hotspot_download_is_enabled():
+    """With data/hotspots.csv.gz present, the Download hotspots CSV button is live."""
+    if not (DATA / "hotspots.csv.gz").exists():
+        pytest.skip("hotspot list not generated in this checkout")
+    app = run(state="Punjab", district="Ludhiana", dates=((2020, 10), (2020, 11)))
+    button = next(b for b in app.get("download_button") if b.proto.label == "Download hotspots CSV")
+    assert not button.proto.disabled

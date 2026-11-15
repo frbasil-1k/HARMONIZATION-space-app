@@ -89,10 +89,23 @@ Method and checks: `science/fire_types.md`.
 District polygons (FAO GAUL 2015 Level 2, simplified to 500 m), properties `state` and
 `district`. Not an official boundary of India.
 
-## `hotspots.csv.gz` (when present)
+## `hotspots.csv.gz` — every hotspot detection
 
-Individual hotspot pixel-days for all 49 districts: `state, district, sensor, acq_date,
-latitude, longitude, frp_mw, confidence`. See `docs/data-contract.md` §7.
+One row per hotspot pixel per day per sensor, all 49 districts, 2016-01-01 to 2026-11-08
+(619,188 rows, gzip-compressed CSV). This is the file behind the app's "Download hotspots
+CSV" button. Counts per district, sensor and month match `fire_pixel_days` above to within
+0.1 % (check H6 of `gee/merge_hotspots.py`). Detections as recorded, **not harmonized**.
+
+| Column | Meaning |
+|---|---|
+| `state`, `district` | district containing the pixel centre |
+| `sensor` | `terra`, `aqua` or `viirs_snpp` |
+| `acq_date` | UTC date of the daily composite, `YYYY-MM-DD` |
+| `latitude`, `longitude` | centre of the ~1 km pixel, degrees |
+| `frp_mw` | fire radiative power, MW; empty if not recorded |
+| `confidence` | `nominal` (FireMask 8) or `high` (FireMask 9) |
+
+Full rules: `docs/data-contract.md` §7.
 
 ## Licence and citation
 

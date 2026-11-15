@@ -774,6 +774,7 @@ def all_data_zip() -> bytes:
         (DATA_PATH, "data/district_monthly.csv"),
         (FIRE_TYPES_PATH, "data/district_fire_types.csv"),
         (STATIC_PATH, "data/static_sources.csv"),
+        (HOTSPOTS_PATH, "data/hotspots.csv.gz"),
         (DATA_DIR / "README.md", "DATA_DICTIONARY.md"),
         (PROJECT_DIR / "science" / "validation.md", "docs/harmonization_validation.md"),
         (PROJECT_DIR / "science" / "fire_types.md", "docs/fire_types.md"),
@@ -969,8 +970,9 @@ def render_downloads(df: pd.DataFrame, harmonized: pd.DataFrame | None, state: s
     cols[3].download_button(
         "Download all data (ZIP)", data=all_data_zip(), file_name="firelens_data.zip",
         mime="application/zip",
-        help="Every district: the harmonized and per-sensor tables, fire types and static sources, "
-             "with the data dictionary, validation reports, licence and citation file.",
+        help="Every district: the harmonized and per-sensor tables, fire types, static sources and "
+             "the individual hotspot list, with the data dictionary, validation reports, licence "
+             "and citation file.",
     )
     st.caption(PNG_NOTE)
 
