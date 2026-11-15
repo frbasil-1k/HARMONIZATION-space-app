@@ -169,3 +169,25 @@ def test_region_note_names_punjab_counts_only_in_the_rice_belt():
             return
     pytest.skip("no Uttarakhand district below half its usual October in this data")
 
+
+
+def test_maps_refit_once_sized():
+    """Both maps carry the refit script, bound to the map streamlit-folium builds.
+
+    Without it the deployed map sometimes opened on the whole world: the fit ran before
+    the frame had its final width.
+    """
+    import json
+    import sys
+
+    from streamlit_folium import generate_leaflet_string
+
+    sys.path.insert(0, str(ROOT / "app"))
+    source = (ROOT / "app" / "app.py").read_text(encoding="utf-8").replace("\nmain()\n", "\n")
+    module = {"__file__": str(ROOT / "app" / "app.py"), "__name__": "app_for_test"}
+    exec(compile(source, "app.py", "exec"), module)
+    geo = json.loads((DATA / "districts.geojson").read_text(encoding="utf-8"))
+    for m in (module["overview_map"](geo, {}, ("Punjab", "Ludhiana")), module["area_map"](geo, None)):
+        script = generate_leaflet_string(m)
+        assert "var map = map_div;" in script and "invalidateSize" in script
+        assert "window.addEventListener(\"resize\", refit)" in script

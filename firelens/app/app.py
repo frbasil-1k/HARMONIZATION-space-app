@@ -13,6 +13,8 @@ from pathlib import Path
 
 import folium
 import folium.plugins
+from branca.element import MacroElement
+from jinja2 import Template
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -1220,6 +1222,47 @@ def ratio_colour(ratio: float | None) -> str:
     return next(colour for upper, _, colour in MAP_BINS if ratio < upper)
 
 
+class RefitWhenSized(MacroElement):
+    """Fit the map to the districts again once its frame has its real size, and whenever
+    that size changes (window resize). streamlit-folium can build the map before the frame
+    has its final width; Leaflet then fits the districts into a tiny box and the map opens
+    on the whole world (seen on the deployed app). A user's own zoom is kept unless the
+    map's size changes."""
+
+    _template = Template("""
+        {% macro script(this, kwargs) %}
+        (function () {
+            var map = {{ this._parent.get_name() }};
+            var bounds = {{ this.bounds|tojson }};
+            var fitted = null;
+            function refit() {
+                map.invalidateSize();
+                var size = map.getSize();
+                if (size.x > 0 && size.y > 0 &&
+                        (fitted === null || fitted.x !== size.x || fitted.y !== size.y)) {
+                    map.fitBounds(bounds);
+                    fitted = size;
+                }
+            }
+            [100, 400, 1200, 3000].forEach(function (ms) { setTimeout(refit, ms); });
+            window.addEventListener("resize", refit);
+        })();
+        {% endmacro %}
+    """)
+
+    def __init__(self, bounds: list[list[float]]):
+        super().__init__()
+        self._name = "RefitWhenSized"
+        self.bounds = [[float(v) for v in corner] for corner in bounds]
+
+
+def fit_districts(m: folium.Map, layer: folium.GeoJson) -> None:
+    """Fit now, and again once the map has its real size (see RefitWhenSized)."""
+    bounds = layer.get_bounds()
+    m.fit_bounds(bounds)
+    RefitWhenSized(bounds).add_to(m)
+
+
 def overview_map(geo: dict, styles: dict, selected: tuple[str, str]) -> folium.Map:
     """All districts filled by styles[(state, district)] = (colour, text); selected one outlined."""
     features = []
@@ -1244,7 +1287,7 @@ def overview_map(geo: dict, styles: dict, selected: tuple[str, str]) -> folium.M
         highlight_function=lambda _: {"weight": 2, "color": "#0072B2"},
         tooltip=folium.GeoJsonTooltip(fields=["label"], labels=False),
     ).add_to(m)
-    m.fit_bounds(layer.get_bounds())
+    fit_districts(m, layer)
     return m
 
 
@@ -1421,7 +1464,7 @@ def area_map(geo: dict, geometry: dict | None) -> folium.Map:
                       "polygon": {"allowIntersection": False, "shapeOptions": {"color": "#D55E00"}}},
         edit_options={"edit": False, "remove": False},
     ).add_to(m)
-    m.fit_bounds(outlines.get_bounds())
+    fit_districts(m, outlines)
     return m
 
 
