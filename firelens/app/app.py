@@ -965,34 +965,38 @@ def render_metrics(series: pd.DataFrame, grid: pd.DataFrame) -> pd.Series | None
 
 
 def region_context(df: pd.DataFrame, sensor: str, latest: pd.Series | None,
-                   start: tuple[int, int], end: tuple[int, int]) -> str | None:
+                   start: tuple[int, int], end: tuple[int, int],
+                   state: str, district: str) -> str | None:
     """One sentence placing the headline month in the whole region, when most districts
-    agree (e.g. Oct 2026 far below normal almost everywhere), so a very low headline in
-    one district reads as what it is: a region-wide fall, not a data gap."""
+    agree (e.g. Oct 2026 far below normal almost everywhere) and the district on screen is
+    one of them, so a very low headline reads as what it is: a region-wide fall, not a
+    data gap. Nothing for a district without a comparison or on the other side."""
     if latest is None:
         return None
     year, month = int(latest["year"]), int(latest["month"])
     rows = df[(df["sensor"] == sensor) & (df["month"] == month) & in_dates(df, start, end)]
-    ratios = []
-    for _, place in rows.groupby(["state", "district"]):
+    ratios, own = [], None
+    for (place_state, place_district), place in rows.groupby(["state", "district"]):
         now = place.loc[place["year"] == year, "activity"].dropna()
         if not now.empty:
             ratio = anomaly_ratio(float(now.iloc[0]), place["activity"].dropna())
             if ratio is not None:
                 ratios.append(ratio)
-    if not ratios:
+                if (place_state, place_district) == (state, district):
+                    own = ratio
+    if not ratios or own is None:
         return None
     label, usual = month_label(year, month), calendar.month_name[month]
     low = sum(r < LOW_RATIO for r in ratios)
     high = sum(r > HIGH_RATIO for r in ratios)
-    if low >= len(ratios) / 2:
+    if low >= len(ratios) / 2 and own < LOW_RATIO:
         count = f"all {low}" if low == len(ratios) else f"{low} of the {len(ratios)}"
         text = (f"Region-wide: in {label}, {count} districts with a comparison were below half "
                 f"their usual {usual}, so a low value here is a region-wide fall, not missing data.")
-        if month in (10, 11) and year >= 2024:
+        if month in (10, 11) and year >= 2024 and state in ("Punjab", "Haryana"):
             text += " " + CAQM_NOTE
         return text
-    if high >= len(ratios) / 2:
+    if high >= len(ratios) / 2 and own > HIGH_RATIO:
         count = f"all {high}" if high == len(ratios) else f"{high} of the {len(ratios)}"
         return (f"Region-wide: in {label}, {count} districts with a comparison were above "
                 f"twice their usual {usual}.")
@@ -1674,7 +1678,7 @@ def main() -> None:
     scaled = district_harmonized(harmonized, state, district, start, end)
 
     latest = render_metrics(series, grid)
-    context = region_context(df, sensor, latest, start, end)
+    context = region_context(df, sensor, latest, start, end, state, district)
     if context:
         st.info(context)
     calendar_tab, yearly_tab, anomaly_tab, trend_tab, types_tab, sensors_tab = st.tabs(
