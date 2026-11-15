@@ -31,6 +31,7 @@ If the raw counts are combined, burning appears to change whenever a satellite i
 - **Fire type:** hotspots split by land cover (cropland, forest, woodland and grass) and static heat sources such as flares and furnaces flagged, for the 19 districts the land-cover export covers so far
 - **Sensor comparison:** monthly activity from each satellite, as recorded and after harmonization
 - **Location search:** jump to a district by latitude and longitude
+- **Draw an area:** draw a box or polygon on the map (or type a latitude/longitude box) and get its own calendar, latest month vs median, yearly view, anomalies and trend, from the hotspots inside it, one satellite at a time; download its hotspots as CSV and the shape as GeoJSON
 - **District map:** all 49 districts coloured by the latest month against each district's own median for that month; click a district to open it
 - **MODIS-only check:** the calendar rebuilt from MODIS alone, overlaid on what VIIRS saw, to show the harmonization works before VIIRS existed
 - **Download:** the district's harmonized and per-sensor monthly data, and the individual hotspot detections (date, location, FRP, sensor) for the selected dates, as CSV (619,188 detections, 2016 to November 2026, matching the calendar's counts to within 0.1%); the trend table for all districts; everything in one ZIP with the data dictionary; every chart as PNG
@@ -57,6 +58,7 @@ firelens/
 ├── app/               # Streamlit web app (R3)
 │   ├── app.py
 │   ├── trends.py      # Mann-Kendall test and Sen's slope
+│   ├── area.py        # point-in-polygon and area for drawn shapes
 │   ├── make_mock.py   # generates mock data for development
 │   └── requirements.txt
 ├── gee/               # Google Earth Engine export scripts (R1)
@@ -119,7 +121,8 @@ The tests check the trend maths against scipy, the data files against the contra
 - A trend is a statement about detections. Seasons from 2023 on fall in the period when burning appears to have moved later in the day, so a decline may be partly a detection effect; the app says so next to every such trend. With 49 districts tested at p < 0.05, two or three can look significant by chance.
 - The sensor range is a measure of how far the satellites disagree, not a confidence interval.
 - The calendar covers 2016–2026, the decade in which all three sensors overlap, not yet the early 2000s.
-- Areas are the 49 districts of Punjab, Haryana and Uttarakhand; drawing a custom area is not yet supported.
+- Coverage is the 49 districts of Punjab, Haryana and Uttarakhand; a drawn area only counts hotspots inside them, and the app says how much of the area that is.
+- A drawn area shows hotspot counts per satellite, not harmonized activity: harmonizing needs the clearly seen land behind each pixel, which the exports hold per district, not per pixel. Districts give the harmonized record.
 - Since 2024, VIIRS records far fewer Punjab hotspots than Aqua MODIS (Nov 2025: 487 vs 4,288 pixel-days, against near-equal counts before 2023). Aqua's orbit has drifted to a later afternoon overpass (past 13:45 from Feb 2023, about 15:30 by mid-2026) while burning has also moved later in the day, so Aqua now sees fires that VIIRS's 13:30 pass misses. FireLens therefore stops blending drifted MODIS; the recent decline in the harmonized series is VIIRS's, and part of it may be a detection effect rather than less burning.
 - New months arrive by re-running the Earth Engine exports; there is no automatic near-real-time refresh yet.
 - VIIRS is used at 1 km (VNP14A1) so that all sensors share one grid; its 375 m detail is not used.
@@ -131,7 +134,8 @@ The tests check the trend maths against scipy, the data files against the contra
 - Extend the calendar back to 2001 (Terra) and 2003 (Aqua) using MODIS and the 2016–2026 calibration
 - Use the VIIRS 375 m (VNP14IMG / FIRMS) detections for the hotspot list and counts
 - Model the post-drift MODIS overpass time explicitly, so drifted MODIS can be used again
-- An equal-area grid, so any drawn area can be analysed
+- Export clear-view counts on an equal-area grid, so a drawn area can be harmonized too
+- A live layer of the last few days of NOAA-20/21 VIIRS detections from the NASA FIRMS API (needs a free MAP_KEY), shown separately from the harmonized record
 - More context per area (protected areas, settlements, weather)
 
 ## Data sources and credits
