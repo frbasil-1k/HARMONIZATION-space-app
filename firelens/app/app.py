@@ -12,6 +12,7 @@ import zipfile
 from pathlib import Path
 
 import folium
+import folium.plugins
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -20,6 +21,7 @@ from streamlit_folium import st_folium
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # so `import trends` works under any runner
 import trends  # noqa: E402  (app/trends.py: Mann-Kendall and Sen's slope)
+from area import area_contains, area_km2, box_geometry, polygons, valid_area  # noqa: E402  (app/area.py)
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DATA_PATH = DATA_DIR / "district_monthly.csv"
@@ -533,23 +535,28 @@ def p_text(p: float) -> str:
     return "< 0.001" if p < 0.001 else f"{p:.3f}"
 
 
-def trend_figure(values: pd.DataFrame, result: dict | None, title: str) -> go.Figure:
-    """Season mean per year, the sensor range as error bars, and Sen's line."""
+def trend_figure(values: pd.DataFrame, result: dict | None, title: str, scale: float = 100,
+                 y_title: str = "Season mean activity (% of clear pixels)", suffix: str = "%") -> go.Figure:
+    """Season mean per year, the sensor range as error bars, and Sen's line.
+
+    scale/y_title/suffix: activity shares are shown as percentages (100, "%"); hotspot
+    counts for a drawn area as they are (1, "").
+    """
     error = None
     if "sensor_min" in values:
         error = dict(type="data", symmetric=False, color="#555555", thickness=1.2, width=4,
-                     array=((values["sensor_max"] - values["value"]) * 100).clip(lower=0),
-                     arrayminus=((values["value"] - values["sensor_min"]) * 100).clip(lower=0))
+                     array=((values["sensor_max"] - values["value"]) * scale).clip(lower=0),
+                     arrayminus=((values["value"] - values["sensor_min"]) * scale).clip(lower=0))
     fig = go.Figure(go.Scatter(
-        x=values["year"], y=values["value"] * 100, mode="markers+lines", name="Season mean",
+        x=values["year"], y=values["value"] * scale, mode="markers+lines", name="Season mean",
         line=dict(color="#0072B2", width=1), marker=dict(size=9, color="#0072B2"), error_y=error,
-        hovertemplate="%{x} · %{y:.3f}%<extra></extra>",
+        hovertemplate="%{x} · %{y:,.3f}" + suffix + "<extra></extra>",
     ))
     if result is not None:
         xs = np.array([values["year"].min(), values["year"].max()], dtype=float)
         significant = result["direction"] != "none"
         fig.add_trace(go.Scatter(
-            x=xs, y=(result["intercept"] + result["slope"] * xs) * 100, mode="lines", hoverinfo="skip",
+            x=xs, y=(result["intercept"] + result["slope"] * xs) * scale, mode="lines", hoverinfo="skip",
             name="Sen's slope" + ("" if significant else " (not significant)"),
             line=dict(color="#111111", width=2, dash="solid" if significant else "dash"),
         ))
@@ -560,20 +567,21 @@ def trend_figure(values: pd.DataFrame, result: dict | None, title: str) -> go.Fi
     fig.update_layout(
         title=title, height=440, margin=dict(l=10, r=10, t=60, b=10),
         xaxis=dict(title=None, dtick=1), legend=dict(orientation="h", y=-0.15),
-        yaxis=dict(title="Season mean activity (% of clear pixels)", ticksuffix="%", rangemode="tozero"),
+        yaxis=dict(title=y_title, ticksuffix=suffix, rangemode="tozero"),
     )
     return fig
 
 
-def trend_cards(result: dict) -> None:
+def trend_cards(result: dict, unit: str = "percentage points of clear land") -> None:
     """Direction, Sen's slope and Mann-Kendall p as three cards."""
     cols = st.columns(3)
     label = {"decreasing": "Decreasing", "increasing": "Increasing", "none": "No significant trend"}
     cols[0].metric("Trend (Mann-Kendall, p < 0.05)", label[result["direction"]])
     slope = "—" if np.isnan(result["slope_pct"]) else f"{result['slope_pct']:+.1f}% per year"
     cols[1].metric("Sen's slope", slope,
-                   help=f"{result['slope'] * 100:+.4f} percentage points of clear land per year; "
-                        "the percentage is relative to the median season.")
+                   help=(f"{result['slope'] * 100:+.4f} {unit} per year; " if unit.startswith("percentage")
+                         else f"{result['slope']:+,.1f} {unit} per year; ")
+                        + "the percentage is relative to the median season.")
     cols[2].metric("Mann-Kendall p", p_text(result["p"]),
                    help=f"{result['n']} complete seasons, {result['first_year']}–{result['last_year']}; "
                         f"Kendall's tau {result['tau']:+.2f}; {result['method']} p-value.")
@@ -1037,18 +1045,6 @@ def load_geojson(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def polygons(geometry: dict) -> list:
-    """Polygon coordinate lists from any geometry; stray lines and points are dropped."""
-    kind = geometry["type"]
-    if kind == "Polygon":
-        return [geometry["coordinates"]]
-    if kind == "MultiPolygon":
-        return list(geometry["coordinates"])
-    if kind == "GeometryCollection":
-        return [p for part in geometry["geometries"] for p in polygons(part)]
-    return []
-
-
 def district_key(feature: dict) -> tuple[str, str]:
     props = feature["properties"]
     return props["state"].strip(), props["district"].strip()
@@ -1234,6 +1230,290 @@ def render_map(geo_path: Path, df: pd.DataFrame, sensor: str, state: str, distri
     st.caption(note + BOUNDARY_DISCLAIMER)
 
 
+# --- Draw an area ---------------------------------------------------------------
+
+MODE_DISTRICT, MODE_AREA = "A district", "Draw an area"
+AREA_KEY = "drawn_area"  # GeoJSON geometry of the area in use, kept across reruns
+AREA_SENSORS = ["viirs_snpp", "aqua", "terra"]  # VIIRS first: the anchor sensor
+AREA_NOTE = (
+    "Counts are hotspot pixel-days inside the area: 1 km pixels with a detection (FireMask ≥ 8), "
+    "summed over each month's daily images, for one satellite at a time; never a sum of satellites. "
+    "They are not harmonized: harmonized activity needs the clearly seen land behind each pixel, "
+    "which is available per district, not per pixel. For harmonized values, pick a district. "
+    "A blank month has no images; a zero means images but no detections."
+)
+AREA_HELP = (
+    "Use the square or polygon tool at the top left of the map, then click to place points "
+    "(double-click, or click the first point, to finish a polygon). Only hotspots inside the 49 "
+    "districts of Punjab, Haryana and Uttarakhand are in the data."
+)
+
+
+@st.cache_data
+def area_hotspots(geometry_json: str) -> pd.DataFrame:
+    """Every hotspot in the area (all sensors, all dates)."""
+    geometry = json.loads(geometry_json)
+    df = load_hotspots(HOTSPOTS_PATH)
+    inside = df[area_contains(geometry, df["longitude"].to_numpy(), df["latitude"].to_numpy())]
+    year = (inside["ym"] - 1) // 12  # ym = year * 12 + month, month 1-12
+    return inside.assign(year=year, month=inside["ym"] - 12 * year)
+
+
+@st.cache_data
+def area_coverage(geometry_json: str, geo_path: Path) -> tuple[float, list[str]]:
+    """Share of the area inside the 49 districts, and the districts it overlaps (largest first).
+
+    Estimated on a grid of up to ~4,000 points over the area, which is plenty for a share.
+    """
+    geometry = json.loads(geometry_json)
+    points = np.array([p for rings in polygons(geometry) for p in rings[0]], dtype=float)
+    (west, south), (east, north) = points[:, :2].min(axis=0), points[:, :2].max(axis=0)
+    n = 64
+    lon, lat = np.meshgrid(np.linspace(west, east, n), np.linspace(south, north, n))
+    lon, lat = lon.ravel(), lat.ravel()
+    inside = area_contains(geometry, lon, lat)
+    lon, lat = lon[inside], lat[inside]
+    if not len(lon):
+        return 0.0, []
+    covered = np.zeros(len(lon), dtype=bool)
+    counts = {}
+    for feature in load_geojson(geo_path)["features"]:
+        hit = area_contains({"type": "MultiPolygon", "coordinates": polygons(feature["geometry"])}, lon, lat)
+        hit &= ~covered
+        if hit.any():
+            state, district = district_key(feature)
+            counts[f"{district}, {state}"] = int(hit.sum())
+            covered |= hit
+    names = [name for name, _ in sorted(counts.items(), key=lambda item: -item[1])]
+    return float(covered.mean()), names
+
+
+def sensor_images(df: pd.DataFrame) -> pd.DataFrame:
+    """Daily images per sensor and month (the most any district had)."""
+    rows = df[df["sensor"].isin(AREA_SENSORS)]
+    return rows.groupby(["sensor", "year", "month"], as_index=False)["n_images"].max()
+
+
+def area_series(points: pd.DataFrame, images: pd.DataFrame, sensor: str,
+                start: tuple[int, int], end: tuple[int, int]) -> pd.DataFrame:
+    """Monthly hotspot pixel-days of one sensor in the area, in the same shape as a district series.
+
+    'activity' holds the count, so the calendar, cards and trend code can be reused; it is
+    NaN for months without images (blank), 0 for months with images and no detections.
+    """
+    months = images[(images["sensor"] == sensor) & in_dates(images, start, end)].copy()
+    counts = (points[points["sensor"] == sensor].groupby(["year", "month"]).size().rename("count"))
+    months = months.merge(counts.reset_index(), on=["year", "month"], how="left")
+    months["count"] = months["count"].fillna(0)
+    months["activity"] = months["count"].where(months["n_images"] > 0)
+    return months.assign(sensor=sensor)[["year", "month", "activity", "n_images", "sensor"]]
+
+
+def area_map(geo: dict, geometry: dict | None) -> folium.Map:
+    """District outlines, the area in use, and drawing tools (box and polygon only)."""
+    m = folium.Map(tiles="OpenStreetMap", scrollWheelZoom=False)
+    outlines = folium.GeoJson(
+        {"type": "FeatureCollection", "features": [
+            {"type": "Feature", "properties": {"label": f"{district_key(f)[1]}, {district_key(f)[0]}"},
+             "geometry": {"type": "MultiPolygon", "coordinates": polygons(f["geometry"])}}
+            for f in geo["features"]]},
+        style_function=lambda _: {"fillOpacity": 0.03, "color": "#666666", "weight": 0.6},
+        tooltip=folium.GeoJsonTooltip(fields=["label"], labels=False),
+    ).add_to(m)
+    if geometry is not None:
+        folium.GeoJson(geometry, style_function=lambda _: {
+            "color": "#D55E00", "weight": 3, "fillOpacity": 0.12, "fillColor": "#D55E00"}).add_to(m)
+    folium.plugins.Draw(
+        draw_options={"polyline": False, "circle": False, "marker": False, "circlemarker": False,
+                      "rectangle": {"shapeOptions": {"color": "#D55E00"}},
+                      "polygon": {"allowIntersection": False, "shapeOptions": {"color": "#D55E00"}}},
+        edit_options={"edit": False, "remove": False},
+    ).add_to(m)
+    m.fit_bounds(outlines.get_bounds())
+    return m
+
+
+def render_area_input(geo: dict) -> dict | None:
+    """Map to draw on, a box typed in degrees, and a clear button; returns the area in use."""
+    geometry = st.session_state.get(AREA_KEY)
+    st.markdown("**Draw the area of interest**")
+    st.caption(AREA_HELP)
+    out = st_folium(area_map(geo, geometry), height=460, use_container_width=True,
+                    returned_objects=["all_drawings"], key=f"area-map-{st.session_state.get('area_map_n', 0)}")
+    drawings = (out or {}).get("all_drawings") or []
+    if drawings:
+        drawn = drawings[-1].get("geometry")
+        if valid_area(drawn) and drawn != geometry:
+            st.session_state[AREA_KEY] = geometry = drawn
+    with st.expander("Or enter a box in latitude / longitude"):
+        cols = st.columns(4)
+        south = cols[0].number_input("South", 28.0, 33.5, 30.70, 0.05, format="%.3f", key="box_s")
+        north = cols[1].number_input("North", 28.0, 33.5, 31.05, 0.05, format="%.3f", key="box_n")
+        west = cols[2].number_input("West", 73.5, 81.5, 75.60, 0.05, format="%.3f", key="box_w")
+        east = cols[3].number_input("East", 73.5, 81.5, 76.20, 0.05, format="%.3f", key="box_e")
+        if st.button("Use this box", key="box_use"):
+            if south < north and west < east:
+                st.session_state[AREA_KEY] = geometry = box_geometry(south, west, north, east)
+            else:
+                st.warning("South must be below north and west left of east.")
+    if geometry is not None and st.button("Clear the area", key="area_clear"):
+        st.session_state.pop(AREA_KEY, None)
+        st.session_state["area_map_n"] = st.session_state.get("area_map_n", 0) + 1
+        st.rerun()
+    return geometry
+
+
+def render_area_metrics(series: pd.DataFrame, grid: pd.DataFrame, sensor: str) -> None:
+    """Latest complete month vs median, its rank, and the peak months, for the area's counts."""
+    latest = latest_observed(series)
+    cols = st.columns(3)
+    if latest is None:
+        cols[0].info("No observed months in these dates.")
+        return
+    month, value = int(latest["month"]), latest["activity"]
+    history = month_history(series, month)
+    ratio, pct = anomaly_ratio(value, history), percentile_rank(value, history)
+    label = f"{MONTH_NAMES[month - 1]} {int(latest['year'])}"
+    note = (f"{SENSOR_LABELS[sensor]}: {value:,.0f} hotspot pixel-days in {label}, compared with every "
+            f"observed {MONTH_NAMES[month - 1]} in the selected dates ({len(history)} year(s)); "
+            f"needs at least {MIN_YEARS}.")
+    cols[0].metric(f"{label} vs {MONTH_NAMES[month - 1]} median", ratio_text(ratio), help=note)
+    cols[1].metric(f"{label} percentile rank", "—" if pct is None else ordinal(pct), help=note)
+    cols[2].metric("Peak months (median count)", " · ".join(peak_months(grid)) or "—")
+
+
+def area_yearly_figure(points: pd.DataFrame, images: pd.DataFrame, start, end, title: str) -> go.Figure:
+    """Hotspot pixel-days per year, one bar per sensor side by side (never stacked or summed)."""
+    fig = go.Figure()
+    for sensor in AREA_SENSORS:
+        rows = area_series(points, images, sensor, start, end)
+        by_year = rows.groupby("year")["activity"].sum(min_count=1)
+        months = rows.groupby("year")["activity"].count()
+        fig.add_trace(go.Bar(
+            x=[str(y) for y in by_year.index], y=by_year, name=SENSOR_LABELS[sensor],
+            marker=dict(color=SENSOR_LINES[sensor]["color"],
+                        pattern=dict(shape={"viirs_snpp": "", "aqua": ".", "terra": "/"}[sensor])),
+            customdata=months, hovertemplate=SENSOR_LABELS[sensor]
+            + " · %{x} · %{y:,.0f} hotspot pixel-days (%{customdata} months observed)<extra></extra>",
+        ))
+    fig.update_layout(barmode="group", title=title, height=420, margin=dict(l=10, r=10, t=60, b=10),
+                      xaxis=dict(type="category", title=None), yaxis=dict(title="Hotspot pixel-days"),
+                      legend=dict(orientation="h", y=-0.15))
+    return fig
+
+
+def render_area_trend(series: pd.DataFrame, sensor: str, title: str) -> None:
+    seasons = list(trends.SEASONS)
+    season = st.radio("Season", seasons, index=default_season(series), horizontal=True, key="area_season")
+    values = trends.season_values(series, trends.SEASONS[season])
+    if values.empty:
+        st.info("No complete season in the selected dates.")
+        return
+    result = trends.trend(values["year"], values["value"])
+    show_chart(trend_figure(values, result, f"{title} · {season}", scale=1,
+                            y_title="Season mean hotspot pixel-days per month", suffix=""),
+               f"{title} trend")
+    if result is None:
+        st.info(f"A trend test needs at least {trends.MIN_TREND_YEARS} complete seasons; "
+                f"the selected dates have {len(values)}.")
+    else:
+        trend_cards(result, unit="hotspot pixel-days per month")
+        if result["last_year"] >= 2023:
+            st.warning(TREND_DRIFT_NOTE)
+        if sensor != ANCHOR_SENSOR:
+            st.caption("A trend in one MODIS sensor's raw counts also carries its orbit drift after "
+                       "2022; Suomi-NPP VIIRS is the steadier choice for trends.")
+    st.caption(TREND_NOTE)
+
+
+def render_area_page(df: pd.DataFrame, geo_path: Path, start: tuple[int, int], end: tuple[int, int]) -> None:
+    """Everything for a drawn (or typed) area: input, coverage, cards, views and download."""
+    geo = load_geojson(geo_path)
+    if not HOTSPOTS_PATH.exists():
+        st.info("Drawing an area needs the hotspot list (data/hotspots.csv.gz), which is not in "
+                "this build. Pick a district instead.")
+        return
+    geometry = render_area_input(geo)
+    if geometry is None:
+        st.info("Draw a box or polygon on the map to see its burning calendar.")
+        return
+    geometry_json = json.dumps(geometry, sort_keys=True)
+    share, districts = area_coverage(geometry_json, geo_path)
+    size = area_km2(geometry)
+    if share == 0:
+        st.warning("That area is outside the 49 districts FireLens covers (Punjab, Haryana and "
+                   "Uttarakhand), so there is no data for it. Draw inside the outlined districts.")
+        return
+    shown = ", ".join(districts[:6]) + (f" and {len(districts) - 6} more" if len(districts) > 6 else "")
+    st.markdown(f"**Your area:** about {size:,.0f} km², overlapping {shown}.")
+    if share < 0.95:
+        st.warning(f"Only {share:.0%} of the area lies inside the 49 districts covered; hotspots in "
+                   "the rest are not in the data, so the counts below are a lower bound.")
+
+    sensor = st.radio("Satellite", AREA_SENSORS, format_func=SENSOR_LABELS.get, horizontal=True,
+                      key="area_sensor")
+    points = area_hotspots(geometry_json)
+    images = sensor_images(df)
+    series = area_series(points, images, sensor, start, end)
+    years = list(range(start[0], end[0] + 1))
+    grid = calendar_grid(series, years)
+    span = month_label(*start) if start == end else f"{month_label(*start)}–{month_label(*end)}"
+    title = f"Drawn area ({size:,.0f} km²) · {SENSOR_LABELS[sensor]} · {span}"
+
+    def selected(year: int, month: int) -> bool:
+        return start <= (year, month) <= end
+
+    render_area_metrics(series, grid, sensor)
+    calendar_tab, yearly_tab, anomaly_tab, trend_tab = st.tabs(["Calendar", "Yearly", "Anomaly", "Trend"])
+    with calendar_tab:
+        def hover(y: int, m: int) -> str:
+            if not selected(y, m):
+                return OUTSIDE_DATES
+            value = grid.loc[y, m]
+            return "no images" if np.isnan(value) else f"{value:,.0f} hotspot pixel-days"
+        fig = heatmap_figure(grid, title, hover, colorscale="Cividis", zmin=0,
+                             colorbar=dict(title=dict(text="Hotspot<br>pixel-days")))
+        show_chart(fig, f"{title} calendar")
+    with yearly_tab:
+        show_chart(area_yearly_figure(points, images, start, end, f"Drawn area · {span}"), "drawn area yearly")
+        st.caption("All three satellites side by side. They see differently (overpass time, pixel "
+                   "size), so compare the shape of each series, not the heights across satellites.")
+    with anomaly_tab:
+        anomaly = anomaly_grid(grid)
+        limit = float(np.nanmax(np.abs(anomaly.to_numpy()))) if anomaly.notna().any().any() else 1.0
+
+        def anomaly_text(y: int, m: int) -> str:
+            if not selected(y, m):
+                return OUTSIDE_DATES
+            value = anomaly.loc[y, m]
+            return "no data" if np.isnan(value) else f"{value:+,.0f} vs median"
+        fig = heatmap_figure(anomaly, title, anomaly_text, colorscale="PuOr_r", zmin=-limit, zmax=limit,
+                             zmid=0, colorbar=dict(title=dict(text="Difference<br>from median")))
+        show_chart(mark_gaps(fig, anomaly, selected), f"{title} anomaly")
+        st.caption("Each month's count minus the median count of the same calendar month across the "
+                   f"selected dates. Orange is above the median, purple below; × means no data or fewer "
+                   f"than {MIN_YEARS} years to compare.")
+    with trend_tab:
+        render_area_trend(series, sensor, title)
+    st.caption(AREA_NOTE)
+
+    in_dates_points = points[points["ym"].between(start[0] * 12 + start[1], end[0] * 12 + end[1])]
+    file_span = f"{start[0]}-{start[1]:02d}_to_{end[0]}-{end[1]:02d}"
+    st.download_button(
+        f"Download the {len(in_dates_points):,} hotspots in this area (CSV)",
+        data=in_dates_points.drop(columns=["ym", "year", "month"]).to_csv(index=False).encode("utf-8"),
+        file_name=f"firelens_area_{file_span}_hotspots.csv", mime="text/csv",
+        help="Every hotspot detection inside the area in the selected dates, all three satellites "
+             "(sensor column), as recorded; don't add sensors together.",
+    )
+    st.download_button(
+        "Download the area (GeoJSON)", data=json.dumps({"type": "Feature", "properties": {},
+                                                         "geometry": geometry}).encode("utf-8"),
+        file_name="firelens_area.geojson", mime="application/geo+json",
+        help="The shape you drew, to reuse in GIS software or to reproduce this view.",
+    )
+
+
 def main() -> None:
     st.set_page_config(page_title="FireLens", layout="wide")
     st.title("FireLens")
@@ -1259,6 +1539,20 @@ def main() -> None:
 
     with st.sidebar:
         st.header("Location")
+        mode = st.radio("Look at", [MODE_DISTRICT, MODE_AREA], horizontal=True, key="area_mode",
+                        help="A district gives the harmonized record; a drawn area gives hotspot "
+                             "counts per satellite inside any shape you draw.")
+    if mode == MODE_AREA:
+        with st.sidebar:
+            start, end = st.select_slider(
+                "Dates", ALL_MONTHS, (ALL_MONTHS[0], ALL_MONTHS[-1]), key="dates",
+                format_func=lambda ym: month_label(*ym),
+            )
+        render_area_page(df, geo_path, start, end)
+        render_about()
+        return
+
+    with st.sidebar:
         render_search(load_geojson(geo_path), df)
         state = st.selectbox("State", sorted(df["state"].unique()), key="state")
         district = st.selectbox(
