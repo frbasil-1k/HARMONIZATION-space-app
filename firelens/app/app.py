@@ -171,6 +171,29 @@ CAQM_NOTE = ("Official farm-fire counts (also from satellites) agree: Punjab's 2
 SERIES_LABELS = {HARMONIZED: "Harmonized (MODIS + VIIRS)", **SENSOR_LABELS}
 MONTH_KEYS = ["state", "district", "year", "month"]
 ALL_MONTHS = [(y, m) for y in YEARS for m in MONTHS]
+# Quick date ranges under the slider. "Before MODIS drift" = the calibration period of the
+# harmonization (Terra drifts from Oct 2022: science/harmonize.py DRIFT_START).
+DATE_PRESETS = {
+    "All years": (ALL_MONTHS[0], ALL_MONTHS[-1]),
+    "Last 5 years": ((ALL_MONTHS[-1][0] - 4, 1), ALL_MONTHS[-1]),
+    "Before MODIS drift": (ALL_MONTHS[0], (2022, 9)),
+}
+GUIDE_TEXT = """
+1. **Pick a place.** Choose a state and district on the left, click a district on the map, or
+   switch *Look at* to **Draw an area** for any box or polygon.
+2. **Pick the data.** *Series*: **Harmonized** puts Terra, Aqua and Suomi-NPP on one scale
+   (recommended), or choose one satellite as recorded. *Dates*: drag the slider or use a quick range.
+3. **Read the cards.** The latest month with at least half its daily images, against the median
+   of the same month in the selected years; its percentile rank; and the usual peak months.
+4. **Use the map** to compare all 49 districts at once, then **the tabs** for one district:
+   Calendar (month × year), Yearly, Anomaly (vs the usual month), Trend (Mann-Kendall + Sen's
+   slope), Fire type (land cover), Sensor comparison. Each view has a one-line summary and an
+   *About this view* panel with the method. Downloads sit under the tabs.
+
+**Key terms.** *Hotspot pixel-day*: one 1 km pixel with a detection on one day. *Activity*:
+hotspot pixel-days ÷ clearly seen pixel-days, so cloudy months stay comparable. *Blank cell*: no
+clear view, not zero. *◦*: a month filled from drifted MODIS (lower confidence).
+"""
 OUTSIDE_DATES = "outside the selected dates"
 BY_ACTIVITY, BY_COUNT = "Activity (share of clear land)", "Hotspot count"
 HARMONIZED_LINE = dict(color="#111111", width=3)
@@ -267,6 +290,35 @@ def load_series(data_path: Path, harmonized_path: Path | None) -> pd.DataFrame:
         return df
     extra = harmonized_rows(load_harmonized(harmonized_path), df)
     return pd.concat([df, extra], ignore_index=True)
+
+
+def explain(summary: str, details: str) -> None:
+    """One short line always visible; the full method one click away, so the page stays
+    scannable and the caveats stay complete."""
+    st.caption(summary)
+    with st.expander("About this view"):
+        st.markdown(details)
+
+
+def apply_date_preset() -> None:
+    """Quick-range callback: set the Dates slider, then clear the choice so the same range
+    can be picked again after dragging the slider."""
+    choice = st.session_state.get("date_preset")
+    if choice in DATE_PRESETS:
+        st.session_state["dates"] = DATE_PRESETS[choice]
+    st.session_state["date_preset"] = None
+
+
+def date_range() -> tuple[tuple[int, int], tuple[int, int]]:
+    """Dates slider plus quick ranges (call inside the sidebar). The value lives in session
+    state, so a quick range can move the slider without a default-value conflict."""
+    st.session_state.setdefault("dates", DATE_PRESETS["All years"])
+    start, end = st.select_slider("Dates", ALL_MONTHS, key="dates",
+                                  format_func=lambda ym: month_label(*ym))
+    st.pills("Quick ranges", list(DATE_PRESETS), key="date_preset", on_change=apply_date_preset,
+             help="Before MODIS drift = Jan 2016 to Sep 2022, the period the harmonization is "
+                  "calibrated on, before Terra's and Aqua's orbits drifted.")
+    return start, end
 
 
 def month_label(year: int, month: int) -> str:
@@ -682,7 +734,8 @@ def render_trend(df: pd.DataFrame, series: pd.DataFrame, state: str, sensor: str
         trend_cards(result)
         if result["last_year"] >= 2023:
             st.warning(TREND_DRIFT_NOTE.format(where="the Series selector in the sidebar"))
-    st.caption(TREND_NOTE + (" " + RANGE_NOTE if extra else ""))
+    explain("One point per season; Mann-Kendall test and Sen's slope, at least "
+            f"{trends.MIN_TREND_YEARS} complete seasons.", TREND_NOTE + (" " + RANGE_NOTE if extra else ""))
     st.download_button(
         "Download trend table (all districts) CSV",
         data=trends_csv(district_trends(df, sensor, start, end, months), season, SERIES_LABELS[sensor]),
@@ -781,7 +834,8 @@ def render_fire_types(state: str, district: str, sensor: str, start: tuple[int, 
                  "detections, which are not harmonized.")
     if float(here["area_covered"].iloc[0]) < 0.999:
         note += f" The export sampled {float(here['area_covered'].iloc[0]):.0%} of this district's area."
-    st.caption(note)
+    explain("Hotspots by the land cover under them; static sources are fixed heat sources, "
+            "not vegetation fires.", note)
 
 
 # --- About: citation, sources, everything in one download ------------------------
@@ -1105,8 +1159,10 @@ def render_calendar(series: pd.DataFrame, grid: pd.DataFrame, years: list[int],
     confidence = confidence_grids(series, years) if estimated else None
     show_chart(calendar_heatmap(grid, counts, title, estimated, by_count, selected, sources, confidence),
                f"{title} calendar")
-    st.caption(ACTIVITY_NOTE + (" " + HARMONIZED_NOTE if estimated else ""))
-    st.caption(HARMONIZED_COUNT_NOTE if estimated else COUNT_NOTE)
+    explain("Each box is one month: brighter means more burning. Blank = no clear view, not zero."
+            + (" ◦ = filled from drifted MODIS (lower confidence)." if estimated else ""),
+            ACTIVITY_NOTE + (" " + HARMONIZED_NOTE if estimated else "") + "\n\n"
+            + (HARMONIZED_COUNT_NOTE if estimated else COUNT_NOTE))
 
 
 def render_comparison(district_rows: pd.DataFrame, scaled: pd.DataFrame | None, place: str) -> None:
@@ -1114,22 +1170,26 @@ def render_comparison(district_rows: pd.DataFrame, scaled: pd.DataFrame | None, 
     views = ["After harmonization", "As recorded"] if scaled is not None else ["As recorded"]
     if scaled is not None and "modis_recon" in scaled:
         views.append("MODIS-only check")
-    view = st.radio("Show", views, horizontal=True, key="comparison_view")
+    view = st.radio("Show", views, horizontal=True, key="comparison_view",
+                    help="After harmonization: every satellite on the VIIRS scale. As recorded: each "
+                         "satellite's own values. MODIS-only check: the calendar rebuilt from Terra "
+                         "and Aqua alone, laid over what VIIRS saw, to test the method.")
     if view == "After harmonization":
         band = scaled if "sensor_min" in scaled else None
         fig = shade_drift(lines_figure(scaled_traces(scaled), place, band), scaled)
         show_chart(fig, f"{place} sensors harmonized")
-        st.caption(SCALED_NOTE + " " + DRIFT_NOTE + (" " + RANGE_NOTE if band is not None else ""))
+        explain("Each satellite after scaling to VIIRS; the black line is the harmonized series.",
+                SCALED_NOTE + " " + DRIFT_NOTE + (" " + RANGE_NOTE if band is not None else ""))
     elif view == "MODIS-only check":
         fig = shade_drift(lines_figure(recon_traces(scaled), place), scaled)
         show_chart(fig, f"{place} MODIS-only check")
         agreement = recon_agreement(scaled)
         if agreement:
             st.markdown(f"**{agreement}**")
-        st.caption(RECON_NOTE)
+        explain("The calendar rebuilt from MODIS alone, against what VIIRS saw.", RECON_NOTE)
     else:
         show_chart(lines_figure(recorded_traces(district_rows), place), f"{place} sensors recorded")
-        st.caption(RECORDED_NOTE)
+        explain("Each satellite as recorded, before harmonization.", RECORDED_NOTE)
 
 
 # --- Map ------------------------------------------------------------------------
@@ -1353,7 +1413,7 @@ def render_map(geo_path: Path, df: pd.DataFrame, sensor: str, state: str, distri
         legend = [(c, t) for _, t, c in MAP_BINS] + [(MAP_NO_DATA, "no comparison")]
         note = MAP_NOTE.format(n=MIN_YEARS) + " "
     out = st_folium(overview_map(geo, styles, (state.strip(), district.strip())),
-                    height=480, use_container_width=True, returned_objects=["last_active_drawing"],
+                    height=420, use_container_width=True, returned_objects=["last_active_drawing"],
                     key=f"map-{state}-{district}-{sensor}-{tag}")
     clicked = (out or {}).get("last_active_drawing") or {}
     props = clicked.get("properties") or {}
@@ -1362,7 +1422,8 @@ def render_map(geo_path: Path, df: pd.DataFrame, sensor: str, state: str, distri
         st.session_state["pending_pick"] = pick
         st.rerun()
     st.markdown(map_legend(legend), unsafe_allow_html=True)
-    st.caption(note + BOUNDARY_DISCLAIMER)
+    explain("Click a district to open it. Each district is compared with its own usual value.",
+            note + BOUNDARY_DISCLAIMER)
 
 
 # --- Draw an area ---------------------------------------------------------------
@@ -1558,7 +1619,8 @@ def render_area_trend(series: pd.DataFrame, sensor: str, title: str) -> None:
         if sensor != ANCHOR_SENSOR:
             st.caption("A trend in one MODIS sensor's raw counts also carries its orbit drift after "
                        "2022; Suomi-NPP VIIRS is the steadier choice for trends.")
-    st.caption(AREA_TREND_NOTE)
+    explain("One point per season, for the satellite chosen above; Mann-Kendall and Sen's slope.",
+            AREA_TREND_NOTE)
 
 
 def render_area_page(df: pd.DataFrame, geo_path: Path, start: tuple[int, int], end: tuple[int, int]) -> None:
@@ -1630,7 +1692,7 @@ def render_area_page(df: pd.DataFrame, geo_path: Path, start: tuple[int, int], e
                    f"than {MIN_YEARS} years to compare.")
     with trend_tab:
         render_area_trend(series, sensor, title)
-    st.caption(AREA_NOTE)
+    explain("Hotspot counts per satellite inside your area, not harmonized.", AREA_NOTE)
 
     in_dates_points = points[points["ym"].between(start[0] * 12 + start[1], end[0] * 12 + end[1])]
     file_span = f"{start[0]}-{start[1]:02d}_to_{end[0]}-{end[1]:02d}"
@@ -1655,6 +1717,8 @@ def main() -> None:
     st.title("FireLens")
     st.caption("Harmonized burning-activity calendar for Northern India, 2016–2026, "
                "from MODIS and VIIRS satellite hotspot detections.")
+    with st.expander("New here? How to use FireLens in 4 steps"):
+        st.markdown(GUIDE_TEXT)
 
     if DATA_PATH.exists():
         df, geo_path = load_series(DATA_PATH, HARMONIZED_PATH), GEO_PATH
@@ -1682,10 +1746,7 @@ def main() -> None:
                              "counts per satellite inside any shape you draw.")
     if mode == MODE_AREA:
         with st.sidebar:
-            start, end = st.select_slider(
-                "Dates", ALL_MONTHS, (ALL_MONTHS[0], ALL_MONTHS[-1]), key="dates",
-                format_func=lambda ym: month_label(*ym),
-            )
+            start, end = date_range()
         render_area_page(df, geo_path, start, end)
         render_about()
         return
@@ -1700,10 +1761,7 @@ def main() -> None:
         st.header("Data")
         available = [s for s in SERIES_LABELS if s in set(df["sensor"])]  # harmonized first
         sensor = st.selectbox("Series", available, format_func=SERIES_LABELS.get, key="sensor")
-        start, end = st.select_slider(
-            "Dates", ALL_MONTHS, (ALL_MONTHS[0], ALL_MONTHS[-1]), key="dates",
-            format_func=lambda ym: month_label(*ym),
-        )
+        start, end = date_range()
         years = list(range(start[0], end[0] + 1))
 
     def selected(year: int, month: int) -> bool:
@@ -1724,16 +1782,24 @@ def main() -> None:
     context = region_context(df, sensor, latest, start, end, state, district)
     if context:
         st.info(context)
+    # The map comes before the tabs: it is the overview a researcher starts from. Its trend
+    # colouring follows the Trend tab's season (session state; the default until it is touched).
+    seasons = list(trends.SEASONS)
+    season = st.session_state.get(f"trend_season_{state}", seasons[default_season(series)])
+    st.subheader("Map: all 49 districts")
+    render_map(geo_path, df, sensor, state, district, start, end, latest, season)
+    st.subheader(f"{district}, {state}")
     calendar_tab, yearly_tab, anomaly_tab, trend_tab, types_tab, sensors_tab = st.tabs(
         ["Calendar", "Yearly", "Anomaly", "Trend", "Fire type", "Sensor comparison"])
     with calendar_tab:
         render_calendar(series, grid, years, place_sensor, sensor == HARMONIZED, selected)
     with yearly_tab:
         show_chart(yearly_chart(yearly_summary(series, years), place_sensor), f"{place_sensor} yearly")
-        st.caption(YEARLY_NOTE + (" " + RANGE_NOTE if has_range(series) else ""))
+        explain("Mean monthly activity per year. Hatched bars = incomplete years; don't compare them.",
+                YEARLY_NOTE + (" " + RANGE_NOTE if has_range(series) else ""))
     with anomaly_tab:
         show_chart(anomaly_heatmap(anomaly_grid(grid), place_sensor, selected), f"{place_sensor} anomaly")
-        st.caption(ANOMALY_NOTE)
+        explain("Each month against its usual value: orange above, purple below.", ANOMALY_NOTE)
     with trend_tab:
         season = render_trend(df, series, state, sensor, place_sensor, start, end, file_span)
     with types_tab:
@@ -1741,8 +1807,6 @@ def main() -> None:
     with sensors_tab:
         render_comparison(district_rows, scaled, place)
     render_downloads(df[dated], scaled, state, district, file_span, start, end)
-    st.subheader("Map")
-    render_map(geo_path, df, sensor, state, district, start, end, latest, season)
     render_about()
 
 
